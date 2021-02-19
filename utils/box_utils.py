@@ -189,3 +189,49 @@ def convert_horizen_box(coordinate,with_label=True):
         return np.concatenate([x_min,y_min,x_max,y_max],axis=1)
 
 
+def convert_coordinate(coordinate, with_label=True):
+    """
+    :param coordinate: format [x_c, y_c, w, h, theta]
+    :return: format [x1, y1, x2, y2, x3, y3, x4, y4]
+    """
+    boxes = []
+    if with_label:
+        for rect in coordinate:
+            box = cv2.boxPoints(((rect[0], rect[1]), (rect[2], rect[3]), rect[4]))
+            box = np.reshape(box, [-1, ])
+            boxes.append([box[0], box[1], box[2], box[3], box[4], box[5], box[6], box[7], rect[5]])
+    else:
+        for rect in coordinate:
+            box = cv2.boxPoints(((rect[0], rect[1]), (rect[2], rect[3]), rect[4]))
+            box = np.reshape(box, [-1, ])
+            boxes.append([box[0], box[1], box[2], box[3], box[4], box[5], box[6], box[7]])
+
+    return np.array(boxes, dtype=np.float32)
+
+def rbbox_transform_inv(boxes, deltas, scale_factors=None):
+    dx = deltas[:, 0]
+    dy = deltas[:, 1]
+    dw = deltas[:, 2]
+    dh = deltas[:, 3]
+    dtheta = deltas[:, 4]
+
+    if scale_factors:
+        dx /= scale_factors[0]
+        dy /= scale_factors[1]
+        dw /= scale_factors[2]
+        dh /= scale_factors[3]
+        dtheta /= scale_factors[4]
+
+    # BBOX_XFORM_CLIP = tf.log(cfgs.IMG_SHORT_SIDE_LEN / 16.)
+    # dw = tf.minimum(dw, BBOX_XFORM_CLIP)
+    # dh = tf.minimum(dh, BBOX_XFORM_CLIP)
+
+    pred_ctr_x = dx * boxes[:, 2] + boxes[:, 0]
+    pred_ctr_y = dy * boxes[:, 3] + boxes[:, 1]
+    pred_w = tf.exp(dw) * boxes[:, 2]
+    pred_h = tf.exp(dh) * boxes[:, 3]
+
+    pred_theta = dtheta * 180 / np.pi + boxes[:, 4]
+
+    return tf.transpose(tf.stack([pred_ctr_x, pred_ctr_y,
+                                  pred_w, pred_h, pred_theta]))

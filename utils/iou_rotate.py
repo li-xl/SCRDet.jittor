@@ -244,8 +244,7 @@ __device__ inline float devRotateIoU(float const * const region1, float const * 
   return area_inter / (area1 + area2 - area_inter);
   
 }
-__global__ void rotate_nms_kernel(const int n_boxes, const float nms_overlap_thresh,
-                           const float *dev_boxes, unsigned long long *dev_mask) {
+__global__ void rotate_nms_kernel(const int n_boxes,const float *dev_boxes1, const float *dev_boxes2,const float *dev_iou) {
   const int row_start = blockIdx.y;
   const int col_start = blockIdx.x;
 
@@ -256,34 +255,12 @@ __global__ void rotate_nms_kernel(const int n_boxes, const float nms_overlap_thr
   const int col_size =
         min(n_boxes - col_start * threadsPerBlock, threadsPerBlock);
 
-  __shared__ float block_boxes[threadsPerBlock * 6];
-  if (threadIdx.x < col_size) {
-    block_boxes[threadIdx.x * 6 + 0] =
-        dev_boxes[(threadsPerBlock * col_start + threadIdx.x) * 6 + 0];
-    block_boxes[threadIdx.x * 6 + 1] =
-        dev_boxes[(threadsPerBlock * col_start + threadIdx.x) * 6 + 1];
-    block_boxes[threadIdx.x * 6 + 2] =
-        dev_boxes[(threadsPerBlock * col_start + threadIdx.x) * 6 + 2];
-    block_boxes[threadIdx.x * 6 + 3] =
-        dev_boxes[(threadsPerBlock * col_start + threadIdx.x) * 6 + 3];
-    block_boxes[threadIdx.x * 6 + 4] =
-        dev_boxes[(threadsPerBlock * col_start + threadIdx.x) * 6 + 4];
-    block_boxes[threadIdx.x * 6 + 5] =
-        dev_boxes[(threadsPerBlock * col_start + threadIdx.x) * 6 + 5];
-  }
-  __syncthreads();
 
   if (threadIdx.x < row_size) {
     const int cur_box_idx = threadsPerBlock * row_start + threadIdx.x;
-    const float *cur_box = dev_boxes + cur_box_idx * 6;
-    int i = 0;
-    unsigned long long t = 0;
-    int start = 0;
-    if (row_start == col_start) {
-      start = threadIdx.x + 1;
-    }
-    for (i = start; i < col_size; i++) {
-      if (devRotateIoU(cur_box, block_boxes + i * 6) > nms_overlap_thresh) {
+    const float *cur_box1 = dev_boxes1 + cur_box_idx * 6;
+    const float *cur_box2 = dev_boxes2 + cur_box_idx * 6;
+    devRotateIoU(cur_box, block_boxes + i * 6) > nms_overlap_thresh) {
         t |= 1ULL << i;
       }
     }
@@ -292,47 +269,13 @@ __global__ void rotate_nms_kernel(const int n_boxes, const float nms_overlap_thr
   }
 }
 '''
+
 CUDA_SRC=r'''
-@alias(dets_sorted,in0)
-@alias(keep,out)
-int boxes_num = dets_sorted_shape0;
-float *boxes_dev = dets_sorted_p;
 
-const int col_blocks = DIVUP(boxes_num, threadsPerBlock);
-int matrices_size = dets_num * col_blocks*sizeof(unsigned long long);
-size_t mask_allocation;
-unsigned long long* mask_dev = (unsigned long long*)exe.allocator->alloc(matrices_size, mask_allocation);
-  
-
-dim3 blocks(DIVUP(boxes_num, threadsPerBlock),DIVUP(boxes_num, threadsPerBlock));
-dim3 threads(threadsPerBlock);
-rotate_nms_kernel<<<blocks, threads>>>(boxes_num,
-                                  nms_overlap_thresh,
-                                  boxes_dev,
-                                  mask_dev);
-
-checkCudaErrors(cudaDeviceSynchronize());
-std::vector<unsigned long long> remv(col_blocks);
-memset(&remv[0], 0, sizeof(unsigned long long) * col_blocks);
-memset(keep_p, 0, dets_num);
-auto keep_out = keep_p;
-for (int i = 0; i < dets_num; i++) {
-  int nblock = i / threadsPerBlock;
-  int inblock = i % threadsPerBlock;
-  if (!(remv[nblock] & (1ULL << inblock))) {
-    keep_out[i] = true;
-    unsigned long long* p = mask_p + i * col_blocks;
-    for (int j = nblock; j < col_blocks; j++) {
-      remv[j] |= p[j];
-    }
-  }
-}
-exe.allocator->free(mask_p, matrices_size, mask_allocation);
 '''
 
-def rotate_nms(dets,thresh):
-    order = jt.argsort(dets[:,5],descending=True)[0]
-    dets_sorted = dets[order,:4]
-    dets_num  = dets_sorted.shape[0]
-    keep = jt.code((dets_num,),'bool',[dets_sorted],cuda_header=CUDA_HEADER,cuda_src=f'float nms_overlap_thresh={thresh};'+CUDA_SRC)
-    return order[keep]
+def iou_rotate(boxes1,boxes2):
+    assert boxes1.shape == boxes2.shape and boxes1.ndim==2
+    if boxes1.shape[0]==0:
+        return jt.zeros((0,),dtype="float32")
+    return jt.code((boxes1.shape[0],),"float32",[boxes1,boxes2],cuda_header=CUDA_HEADER,cuda_src=CUDA_SRC)
