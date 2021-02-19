@@ -123,22 +123,16 @@ class ResNet(nn.Module):
             layers.append(block(self.inplanes, planes, groups=self.groups, base_width=self.base_width, dilation=self.dilation, norm_layer=norm_layer))
         return nn.Sequential(*layers)
 
-    def _forward_impl(self, x):
+    def execute(self, x):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
         x = self.maxpool(x)
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-        x = self.avgpool(x)
-        x = jt.reshape(x, (x.shape[0], -1))
-        x = self.fc(x)
-        return x
-
-    def execute(self, x):
-        return self._forward_impl(x)
+        C2 = self.layer1(x)
+        C3 = self.layer2(C2)
+        C4 = self.layer3(C3)
+        C5 = self.layer4(C4)
+        return C3,C4
 
 def _resnet(block, layers, **kwargs):
     model = ResNet(block, layers, **kwargs)

@@ -3,7 +3,7 @@ from jittor import nn
 
 class InceptionModule(nn.Module):
     def __init__(self,):
-        super(Inception,self).__init__()
+        super(InceptionModule,self).__init__()
         self.branch_0_conv = nn.Conv(512,out_channels=384,kernel_size=[1,1],stride=1)
 
         self.branch_1_conv1 = nn.Conv(512,out_channels=192,kernel_size=[1,1],stride=1)
@@ -100,11 +100,11 @@ class MDANet(nn.Module):
 
     def execute(self,x):
         # Channel Attention
-        ca = jt.mean(x,dims=[2,3])
+        ca = x.mean(dims=[2,3])
         ca = self.ca_fc1(ca)
         ca = nn.relu(ca)
         ca = self.ca_fc2(ca)
-        ca = jt.sigmoid(ca)
+        ca = ca.sigmoid()
         ca = jt.reshape(ca, [-1, 1, 1, self.out_dim])
 
         # Pixel Attention
