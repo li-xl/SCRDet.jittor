@@ -1,5 +1,6 @@
 import jittor as jt 
 import numpy as np 
+import cv2
 
 def generate_anchor_base(base_size=16, ratios=[0.5, 1, 2],
                          anchor_scales=[8, 16, 32]):

@@ -3,9 +3,12 @@ import numpy as np
 import copy
 import cv2
 import sys
+import json
+import glob
+sys.path.append("./")
 
-from utils.tools import makedirs
-from libs.utils.coordinate_convert import backward_convert
+from utils.box_utils import convert_rotation_box
+
 
 
 CLASSNAMES = ['plane', 'baseball-diamond', 'bridge', 'ground-track-field',
@@ -13,189 +16,68 @@ CLASSNAMES = ['plane', 'baseball-diamond', 'bridge', 'ground-track-field',
               'storage-tank', 'soccer-ball-field','roundabout', 'harbor',
               'swimming-pool', 'helicopter', 'container-crane']
 
-
-def save_to_xml(save_path, im_height, im_width, objects_axis, label_name):
-    im_depth = 0
-    object_num = len(objects_axis)
-    doc = Document()
-
-    annotation = doc.createElement('annotation')
-    doc.appendChild(annotation)
-
-    folder = doc.createElement('folder')
-    folder_name = doc.createTextNode('DOTA1.0')
-    folder.appendChild(folder_name)
-    annotation.appendChild(folder)
-
-    filename = doc.createElement('filename')
-    filename_name = doc.createTextNode(save_path.split('/')[-1].split('.')[0])
-    filename.appendChild(filename_name)
-    annotation.appendChild(filename)
-
-    source = doc.createElement('source')
-    annotation.appendChild(source)
-
-    database = doc.createElement('database')
-    database.appendChild(doc.createTextNode('The DOTA Database'))
-    source.appendChild(database)
-
-    annotation_s = doc.createElement('annotation')
-    annotation_s.appendChild(doc.createTextNode('XML'))
-    source.appendChild(annotation_s)
-
-    image = doc.createElement('image')
-    image.appendChild(doc.createTextNode('flickr'))
-    source.appendChild(image)
-
-    flickrid = doc.createElement('flickrid')
-    flickrid.appendChild(doc.createTextNode('xxxxxxxx'))
-    source.appendChild(flickrid)
-
-    owner = doc.createElement('owner')
-    annotation.appendChild(owner)
-
-    flickrid_o = doc.createElement('flickrid')
-    flickrid_o.appendChild(doc.createTextNode('xxxxxxxx'))
-    owner.appendChild(flickrid_o)
-
-    name_o = doc.createElement('name')
-    name_o.appendChild(doc.createTextNode('yang'))
-    owner.appendChild(name_o)
-
-    size = doc.createElement('size')
-    annotation.appendChild(size)
-    width = doc.createElement('width')
-    width.appendChild(doc.createTextNode(str(im_width)))
-    height = doc.createElement('height')
-    height.appendChild(doc.createTextNode(str(im_height)))
-    depth = doc.createElement('depth')
-    depth.appendChild(doc.createTextNode(str(im_depth)))
-    size.appendChild(width)
-    size.appendChild(height)
-    size.appendChild(depth)
-    segmented = doc.createElement('segmented')
-    segmented.appendChild(doc.createTextNode('0'))
-    annotation.appendChild(segmented)
-    for i in range(object_num):
-        objects = doc.createElement('object')
-        annotation.appendChild(objects)
-        object_name = doc.createElement('name')
-        object_name.appendChild(doc.createTextNode(label_name[int(objects_axis[i][8])]))
-        objects.appendChild(object_name)
-        pose = doc.createElement('pose')
-        pose.appendChild(doc.createTextNode('Unspecified'))
-        objects.appendChild(pose)
-        truncated = doc.createElement('truncated')
-        truncated.appendChild(doc.createTextNode('0'))
-        objects.appendChild(truncated)
-        difficult = doc.createElement('difficult')
-        difficult.appendChild(doc.createTextNode(str(objects_axis[i][8])))
-        objects.appendChild(difficult)
-        bndbox = doc.createElement('bndbox')
-        objects.appendChild(bndbox)
-
-        x0 = doc.createElement('x0')
-        x0.appendChild(doc.createTextNode(str((objects_axis[i][0]))))
-        bndbox.appendChild(x0)
-        y0 = doc.createElement('y0')
-        y0.appendChild(doc.createTextNode(str((objects_axis[i][1]))))
-        bndbox.appendChild(y0)
-
-        x1 = doc.createElement('x1')
-        x1.appendChild(doc.createTextNode(str((objects_axis[i][2]))))
-        bndbox.appendChild(x1)
-        y1 = doc.createElement('y1')
-        y1.appendChild(doc.createTextNode(str((objects_axis[i][3]))))
-        bndbox.appendChild(y1)
-
-        x2 = doc.createElement('x2')
-        x2.appendChild(doc.createTextNode(str((objects_axis[i][4]))))
-        bndbox.appendChild(x2)
-        y2 = doc.createElement('y2')
-        y2.appendChild(doc.createTextNode(str((objects_axis[i][5]))))
-        bndbox.appendChild(y2)
-
-        x3 = doc.createElement('x3')
-        x3.appendChild(doc.createTextNode(str((objects_axis[i][6]))))
-        bndbox.appendChild(x3)
-        y3 = doc.createElement('y3')
-        y3.appendChild(doc.createTextNode(str((objects_axis[i][7]))))
-        bndbox.appendChild(y3)
-
-    f = open(save_path, 'w')
-    f.write(doc.toprettyxml(indent=''))
-    f.close()
+def save_json(save_file,idx,objects,img_w,img_h,classnames):
+    data = {
+              "id":idx,
+              "img_size":(img_h,img_w),
+              "objects":[{"boxes":o[:8],"category":classnames[int(o[8])],"diffculty":int(o[9]) }for o in objects.tolist()]
+           }
+    json.dump(data,open(save_file,"w"))
 
 
-def read_data(lines):
+def read_data(txt_file,classnames):
     all_data = []
-    for i in lines:
-        if len(i.split(' ')) < 10:
-            continue
-        all_data.append(
-            [float(xy) for xy in i.split(' ')[:8]] + [class_list.index(i.split(' ')[8])] + [int(class_list.index(i.split(' ')[9]))]
-        )
-
-        if i.split(' ')[8] not in class_list:
-            print('warning found a new label :', i.split(' ')[8])
-            exit()
-    return np.array(all_data)
+    with open(txt_file) as f:
+        for line in f.readlines():
+            data = line.strip().split(" ")
+            if len(data)<10:continue 
+            box = [float(d) for d in data[:8]]
+            category = [classnames.index(data[8])]
+            difficult = [int(data[9])]
+            all_data.append(box+category+difficult)
+    return all_data
 
 
-def clip_image(file_idx, image, boxes_all, width, height, w_overlap, h_overlap):
+def clip_image(file_idx, image, boxes_all, width, height, stride_w, stride_h,save_dir):
     print(file_idx)
+
+    boxes_all = np.array(boxes_all)
 
     # fill useless boxes
     min_pixel = 5
-    boxes_all_5 = backward_convert(boxes_all[:, :8], False)
-    small_boxes = boxes_all[np.logical_or(boxes_all_5[:, 2] <= min_pixel, boxes_all_5[:, 3] <= min_pixel), :]
-    cv2.fillConvexPoly(image, np.reshape(small_boxes, [-1, 2]), color=(0, 0, 0))
-    different_boxes = boxes_all[boxes_all[:, 9] == 1]
-    cv2.fillConvexPoly(image, np.reshape(different_boxes, [-1, 2]), color=(0, 0, 0))
+    boxes_all_5 = convert_rotation_box(boxes_all[:, :8], False)
 
     boxes_all = boxes_all[np.logical_and(boxes_all_5[:, 2] > min_pixel, boxes_all_5[:, 3] > min_pixel), :]
-    boxes_all = boxes_all[boxes_all[:, 9] == 0]
 
     if boxes_all.shape[0] > 0:
-
-        imgH = image.shape[0]
-        imgW = image.shape[1]
-
-        if imgH < height:
-            temp = np.zeros([height, imgW, 3], np.float32)
-            temp[0:imgH, :, :] = image
-            image = temp
-            imgH = height
-
-        if imgW < width:
-            temp = np.zeros([imgH, width, 3], np.float32)
-            temp[:, 0:imgW, :] = image
-            image = temp
-            imgW = width
-
-        for hh in range(0, imgH, height - h_overlap):
-            if imgH - hh - 1 < height:
-                hh_ = imgH - height
-            else:
-                hh_ = hh
-            for ww in range(0, imgW, width - w_overlap):
-                if imgW - ww - 1 < width:
-                    ww_ = imgW - width
-                else:
-                    ww_ = ww
-                subimg = image[hh_:(hh_ + height), ww_:(ww_ + width), :]
-
+        shape = image.shape
+        for start_h in range(0, shape[0], stride_h):
+            for start_w in range(0, shape[1], stride_w):
                 boxes = copy.deepcopy(boxes_all)
                 box = np.zeros_like(boxes_all)
+                start_h_new = start_h
+                start_w_new = start_w
+                if start_h + height > shape[0]:
+                    start_h_new = shape[0] - height
+                if start_w + width > shape[1]:
+                    start_w_new = shape[1] - width
+                top_left_row = max(start_h_new, 0)
+                top_left_col = max(start_w_new, 0)
+                bottom_right_row = min(start_h + height, shape[0])
+                bottom_right_col = min(start_w + width, shape[1])
 
-                top_left_row = max(hh_, 0)
-                top_left_col = max(ww_, 0)
-                bottom_right_row = min(hh_ + height, imgH)
-                bottom_right_col = min(ww_ + width, imgW)
+                subImage = image[top_left_row:bottom_right_row, top_left_col: bottom_right_col]
 
-                box[:, :8:2] = boxes[:, :8:2] - top_left_col
-                box[:, 1:8:2] = boxes[:, 1:8:2] - top_left_row
-                box[:, 8:] = boxes[:, 8:]
+                box[:, 0] = boxes[:, 0] - top_left_col
+                box[:, 2] = boxes[:, 2] - top_left_col
+                box[:, 4] = boxes[:, 4] - top_left_col
+                box[:, 6] = boxes[:, 6] - top_left_col
+
+                box[:, 1] = boxes[:, 1] - top_left_row
+                box[:, 3] = boxes[:, 3] - top_left_row
+                box[:, 5] = boxes[:, 5] - top_left_row
+                box[:, 7] = boxes[:, 7] - top_left_row
+                box[:, 8] = boxes[:, 8]
                 center_y = 0.25 * (box[:, 1] + box[:, 3] + box[:, 5] + box[:, 7])
                 center_x = 0.25 * (box[:, 0] + box[:, 2] + box[:, 4] + box[:, 6])
 
@@ -203,49 +85,32 @@ def clip_image(file_idx, image, boxes_all, width, height, w_overlap, h_overlap):
                 cond2 = np.intersect1d(np.where(center_y[:] <= (bottom_right_row - top_left_row))[0],
                                        np.where(center_x[:] <= (bottom_right_col - top_left_col))[0])
                 idx = np.intersect1d(cond1, cond2)
-                if len(idx) > 0:
+                if len(idx) > 0 and (subImage.shape[0] > 5 and subImage.shape[1] > 5):
 
-                    makedirs(os.path.join(save_dir, 'images'))
+                    os.makedirs(os.path.join(save_dir, 'images'),exist_ok=True)
                     img = os.path.join(save_dir, 'images',
                                        "%s_%04d_%04d.png" % (file_idx, top_left_row, top_left_col))
-                    cv2.imwrite(img, subimg)
+                    cv2.imwrite(img, subImage)
 
-                    makedirs(os.path.join(save_dir, 'labeltxt'))
-                    xml = os.path.join(save_dir, 'labeltxt',
-                                       "%s_%04d_%04d.xml" % (file_idx, top_left_row, top_left_col))
+                    os.makedirs(os.path.join(save_dir, 'labeltxt'),exist_ok=True)
+                    save_file = os.path.join(save_dir, 'labeltxt',
+                                       "%s_%04d_%04d.json" % (file_idx, top_left_row, top_left_col))
 
-                    save_to_xml(xml, subimg.shape[0], subimg.shape[1], box[idx, :], class_list)
+                    save_json(save_file,"%s_%04d_%04d" % (file_idx, top_left_row, top_left_col), box[idx, :],subImage.shape[0], subImage.shape[1], CLASSNAMES)
 
+def prepare_dota(part_name="val"):
+    np.random.seed(0)
+    data_dir = f"/mnt/disk/lxl/dataset/DOTA/{part_name}"
+    save_dir = f"/mnt/disk/lxl/dataset/DOTA_CROP/{part_name}"
+    img_h, img_w, h_overlap, w_overlap = 800, 800, 600, 600
 
-def prepare_dota():
-    data_dir = "/mnt/disk/lxl/dataset/DOTA"
-    
+    image_files = glob.glob(f"{data_dir}/images/*.png")
+    for img_f in image_files:
+        txt_f = img_f.replace("images","labelTxt-v1.0/labelTxt").replace("png","txt")
+        img = cv2.imread(img_f,cv2.IMREAD_UNCHANGED)
+        box = read_data(txt_f,CLASSNAMES)
+        if len(box)>0:
+            clip_image(img_f.split("/")[-1].strip('.png'), img, box, img_w, img_h, w_overlap, h_overlap,save_dir)
 
 if __name__ == '__main__':
-    print('class_list', len(class_list))
-    raw_data = '/data/yangxue/dataset/DOTA/val/'
-    raw_images_dir = os.path.join(raw_data, 'images', 'images')
-    raw_label_dir = os.path.join(raw_data, 'labelTxt', 'labelTxt')
-
-    save_dir = '/data/yangxue/dataset/DOTA/DOTA/trainval/'
-
-    images = [i for i in os.listdir(raw_images_dir) if 'png' in i]
-    labels = [i for i in os.listdir(raw_label_dir) if 'txt' in i]
-
-    print('find image', len(images))
-    print('find label', len(labels))
-
-    min_length = 1e10
-    max_length = 1
-
-    img_h, img_w, h_overlap, w_overlap = 600, 600, 150, 150
-
-    for idx, img in enumerate(images):
-        print(idx, 'read image', img)
-        img_data = cv2.imread(os.path.join(raw_images_dir, img))
-
-        txt_data = open(os.path.join(raw_label_dir, img.replace('png', 'txt')), 'r').readlines()
-        box = read_data(txt_data)
-
-        if box.shape[0] > 0:
-            clip_image(img.strip('.png'), img_data, box, img_w, img_h, w_overlap, h_overlap)
+    prepare_dota(part_name="train")

@@ -131,7 +131,7 @@ class ResNet(nn.Module):
         C2 = self.layer1(x)
         C3 = self.layer2(C2)
         C4 = self.layer3(C3)
-        C5 = self.layer4(C4)
+        # C5 = self.layer4(C4)
         return C3,C4
 
 def _resnet(block, layers, **kwargs):

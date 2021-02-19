@@ -27,6 +27,7 @@ def test():
     boxes,categories,others = read_txt(txt_file)
     for box in boxes:
         img = draw_box(img,box)
+    # cv2.fillConvexPoly(img,np.array([10,10,20,20,30,505,23,23]).reshape(-1,2),color=(0,0,0))
     cv2.imwrite("test.jpg",img)
 
 if __name__ == "__main__":
