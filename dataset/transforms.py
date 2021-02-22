@@ -4,6 +4,7 @@ import numpy as np
 import random
 import jittor.transform as T 
 from PIL import Image
+from utils.box_utils import bbox8_flip,bbox8_resize
 
 class Compose(object):
     def __init__(self, transforms):
@@ -44,10 +45,11 @@ class Resize(object):
         return (ow,oh)
 
     def __call__(self, image, target=None):
+        ori_size = image.size
         size = self.get_size(image.size)
         image = image.resize(size,Image.BILINEAR)
         if target is not None:
-            target.resize(image.size)
+            target = bbox8_resize(target,ori_size,image.size)
         return image, target
 
 
@@ -59,7 +61,7 @@ class RandomHorizontalFlip(object):
         if random.random() < self.prob:
             image = image.transpose(Image.FLIP_LEFT_RIGHT)
             if target is not None:
-                target.hflip()
+                target = bbox8_flip(target,image.size)
         return image, target
     
 class ToTensor(object):

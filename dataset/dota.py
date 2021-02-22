@@ -42,8 +42,6 @@ class DOTA(dataset.Dataset):
         anno_path = os.path.join(self.data_dir,"labeltxt",f"{img_idx}.json")
 
         img = Image.open(img_path)
-        ori_img_size = img.size
-
         anno = json.load(open(anno_path))["objects"]
         
         boxes = np.array([a["boxes"] for a in anno],dtype=np.float32)

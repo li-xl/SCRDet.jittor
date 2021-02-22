@@ -1,6 +1,7 @@
 import jittor as jt
-from utils.box_utils import rbbox_transform_inv
+from utils.box_utils import loc2bbox_r
 from utils.iou_rotate import iou_rotate
+
 
 def smooth_l1_loss_base(bbox_pred, bbox_targets, sigma=1.0):
     '''
@@ -37,41 +38,28 @@ def smooth_l1_loss_rcnn(bbox_pred, bbox_targets, label, sigma=1.0):
     return bbox_loss
 
 
-def iou_smooth_l1_loss_rcnn_r(bbox_pred, bbox_targets, label, rois, target_gt_r, num_classes, roi_scale_factor,epsilon=1e-5,sigma=1.0):
+def iou_smooth_l1_loss_rcnn_r(bbox_pred, bbox_targets, label,rois,sigma=1.0):
 
     outside_mask = (label>0).float32()
 
-    target_gt_r = jt.reshape(jt.repeat(jt.reshape(target_gt_r, [-1, 1, 5]), [1, num_classes, 1]), [-1, 5])
-    x_c = (rois[:, 2:3] + rois[:, 0:1]) / 2
-    y_c = (rois[:, 3:4] + rois[:, 1:2]) / 2
-    h = rois[:, 2:3] - rois[:, 0:1] + 1
-    w = rois[:, 3:4] - rois[:, 1:2] + 1
-    theta = -90 * jt.ones_like(x_c)
-    rois = jt.contrib.concat([x_c, y_c, w, h, theta],dim=1)
-    rois = jt.reshape(jt.repeat(jt.reshape(rois, [-1, 1, 5]), [1, num_classes, 1]), [-1, 5])
-
-    boxes_pred = rbbox_transform_inv(boxes=rois, deltas=jt.reshape(bbox_pred, [-1, 5]),scale_factors=roi_scale_factor)
+    
+    boxes_pred = loc2bbox_r(rois,bbox_pred)
+    target_gt_r = loc2bbox_r(rois,bbox_targets)
     overlaps = iou_rotate(boxes_pred,target_gt_r)
-    overlaps = jt.reshape(overlaps, [-1, num_classes])
-
-    bbox_pred = jt.reshape(bbox_pred, [-1, num_classes, 5])
-    bbox_targets = jt.reshape(bbox_targets, [-1, num_classes, 5])
 
     value = smooth_l1_loss_base(bbox_pred, bbox_targets, sigma=sigma)
     value = value.sum(2)
-    iou_factor = ((jt.exp(1 - overlaps) - 1) / (value + epsilon)).stop_grad()
-
+    iou_factor = ((jt.exp(1 - overlaps) - 1) / (value + 1e-5)).stop_grad()
     value = value*iou_factor
-    value = value*outside_mask.unsqueeze(1)
-    regression_loss = value[jt.index((label.shape[0],),dim=0),jt.maximum(label,0)]
-    bbox_loss = regression_loss / bbox_pred.shape[0]
-
+    value = value*outside_mask
+    bbox_loss = value / bbox_pred.shape[0]
     return bbox_loss
 
 
 def attention_loss(mask, featuremap):
     # featuremap:[n,c,h,w]
     # mask: [n,c,h,w]
+    assert mask.ndim==4 and featuremap.ndim==4
     featuremap = jt.nn.interpolate(featuremap, [mask.shape[-2],mask.shape[-1]])
     mask = mask.reshape([-1, ]).int32()
     featuremap = featuremap.reshape([-1, 2])
