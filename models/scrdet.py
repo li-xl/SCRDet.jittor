@@ -57,7 +57,7 @@ class SCRDet(nn.Module):
                             spatial_scale=1.0,
                             sampling_ratio=0)
 
-    def _forward_train(self,feature,pa_mask,img_sizes,hbb,rbb,labels):
+    def _forward_train(self,feature,pa_mask,img_sizes,batch_masks,hbb,rbb,labels):
         N = feature.shape[0]
         rpn_locs, rpn_scores, rois, roi_indices, anchor = self.rpn(feature, img_sizes)
         
@@ -115,14 +115,14 @@ class SCRDet(nn.Module):
         roi_cls_locs, roi_scores = self.head(features, rois, roi_indices)
         return rpn_locs, rpn_scores,roi_cls_locs, roi_scores, rois, roi_indices
 
-    def execute(self,batch_imgs,img_sizes,hbb=None,rbb=None,labels=None):
+    def execute(self,batch_imgs,img_sizes,batch_masks=None,hbb=None,rbb=None,labels=None):
         # backbone
         C3,C4 = self.backbone(batch_imgs)
         feature,pa_mask = self.fpn(C3,C4)
 
         if self.is_training():
-            assert hbb is not None and rbb is not None and labels is not None, "Model must has ground truth"
-            return self._forward_train(feature,pa_mask,img_sizes,hbb,rbb,labels)
+            assert batch_masks is not None and hbb is not None and rbb is not None and labels is not None, "Model must has ground truth"
+            return self._forward_train(feature,pa_mask,img_sizes,batch_masks,hbb,rbb,labels)
         else:
             return self._forward_test(feature,img_sizes)
         

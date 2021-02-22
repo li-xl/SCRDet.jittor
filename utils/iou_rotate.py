@@ -9,7 +9,7 @@ CUDA_HEADER=r'''
 #define DIVUP(m,n) ((m) / (n) + ((m) % (n) > 0))
 using namespace std;
 
-int const threadsPerBlock = sizeof(unsigned long long) * 8;
+int const threadsPerBlock = 1024;
 
 __device__ inline float trangle_area(float * a, float * b, float * c) {
   return ((a[0] - c[0]) * (b[1] - c[1]) - (a[1] - c[1]) * (b[0] - c[0]))/2.0;
@@ -22,6 +22,14 @@ __device__ inline float area(float * int_pts, int num_of_inter) {
     area += fabs(trangle_area(int_pts, int_pts + 2 * i + 2, int_pts + 2 * i + 4));
   }
   return area;
+}
+
+__device__ inline bool equal(float const * const box1, float const * const box2){
+  for(int i=0;i<5;i++){
+    if (fabs(box1[i]-box2[i])>1e-5)
+        return false;
+  }
+  return true;
 }
 
 __device__ inline void reorder_pts(float * int_pts, int num_of_inter) {
@@ -236,42 +244,31 @@ __device__ inline float inter(float const * const region1, float const * const r
 }
 
 __device__ inline float devRotateIoU(float const * const region1, float const * const region2) {
-  
+  if(equal(region1,region2))
+      return 1.0;
   float area1 = region1[2] * region1[3];
   float area2 = region2[2] * region2[3];
   float area_inter = inter(region1, region2);
-
   return area_inter / (area1 + area2 - area_inter);
   
 }
-__global__ void rotate_nms_kernel(const int n_boxes,const float *dev_boxes1, const float *dev_boxes2,const float *dev_iou) {
-  const int row_start = blockIdx.y;
-  const int col_start = blockIdx.x;
-
-  // if (row_start > col_start) return;
-
-  const int row_size =
-        min(n_boxes - row_start * threadsPerBlock, threadsPerBlock);
-  const int col_size =
-        min(n_boxes - col_start * threadsPerBlock, threadsPerBlock);
-
-
-  if (threadIdx.x < row_size) {
-    const int cur_box_idx = threadsPerBlock * row_start + threadIdx.x;
-    const float *cur_box1 = dev_boxes1 + cur_box_idx * 6;
-    const float *cur_box2 = dev_boxes2 + cur_box_idx * 6;
-    devRotateIoU(cur_box, block_boxes + i * 6) > nms_overlap_thresh) {
-        t |= 1ULL << i;
-      }
-    }
-    const int col_blocks = DIVUP(n_boxes, threadsPerBlock);
-    dev_mask[cur_box_idx * col_blocks + col_start] = t;
+__global__ void rotate_iou_kernel(const int n_boxes,const float *dev_boxes1, const float *dev_boxes2,float *dev_iou) {
+  const int i = threadIdx.x + blockDim.x*blockIdx.x;
+  if (i < n_boxes) {
+    const float *cur_box1 = dev_boxes1 + i * 5;
+    const float *cur_box2 = dev_boxes2 + i * 5;
+    dev_iou[i] = devRotateIoU(cur_box1, cur_box2);
   }
 }
 '''
 
 CUDA_SRC=r'''
-
+@alias(boxes1,in0)
+@alias(boxes2,in1)
+@alias(ious,out)
+const int n_boxes = boxes1_shape0;
+const int col_blocks = DIVUP(n_boxes, threadsPerBlock);
+rotate_iou_kernel<<<col_blocks,threadsPerBlock>>>(n_boxes,boxes1_p,boxes2_p,ious_p);
 '''
 
 def iou_rotate(boxes1,boxes2):
@@ -279,3 +276,14 @@ def iou_rotate(boxes1,boxes2):
     if boxes1.shape[0]==0:
         return jt.zeros((0,),dtype="float32")
     return jt.code((boxes1.shape[0],),"float32",[boxes1,boxes2],cuda_header=CUDA_HEADER,cuda_src=CUDA_SRC)
+
+
+def test():
+    jt.flags.use_cuda=1
+    boxes1 = jt.array([[1,1,2,2,0.1],[1,1,2,2,0.2],[1,1,2,2,0.2]]).float32()
+    boxes2 = jt.array([[1,1,2,3,1],[1,1,2,2,0.3],[1,1,2,2,0.2]]).float32()
+    ious = iou_rotate(boxes1=boxes1,boxes2=boxes2)
+    print(ious)
+
+if __name__ == "__main__":
+    test()

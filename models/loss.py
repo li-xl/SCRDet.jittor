@@ -1,7 +1,8 @@
 import jittor as jt
 from utils.box_utils import rbbox_transform_inv
+from utils.iou_rotate import iou_rotate
 
-def smooth_l1_loss_base(self, bbox_pred, bbox_targets, sigma=1.0):
+def smooth_l1_loss_base(bbox_pred, bbox_targets, sigma=1.0):
     '''
     :param bbox_pred: [-1, 4] in RPN. [-1, cls_num+1, 4] in Fast-rcnn
     :param bbox_targets: shape is same as bbox_pred
@@ -16,7 +17,7 @@ def smooth_l1_loss_base(self, bbox_pred, bbox_targets, sigma=1.0):
     return loss_box
 
 
-def smooth_l1_loss_rcnn(self, bbox_pred, bbox_targets, label, num_classes, sigma=1.0):
+def smooth_l1_loss_rcnn(bbox_pred, bbox_targets, label, sigma=1.0):
     '''
     :param bbox_pred: [-1, (cfgs.CLS_NUM +1) * 4]
     :param bbox_targets:[-1, (cfgs.CLS_NUM +1) * 4]
@@ -29,80 +30,51 @@ def smooth_l1_loss_rcnn(self, bbox_pred, bbox_targets, label, num_classes, sigma
     outside_mask = (label>0).float32()
 
     value = smooth_l1_loss_base(bbox_pred,bbox_targets,sigma=sigma)
-    value = tf.reduce_sum(value, 2)
-    value = tf.reshape(value, [-1, num_classes])
-
-    inside_mask = tf.one_hot(tf.reshape(label, [-1, 1]),
-                                 depth=num_classes, axis=1)
-
-    inside_mask = tf.stop_gradient(tf.to_float(tf.reshape(inside_mask, [-1, num_classes])))
-
-    normalizer = bbox_pred.shape[0]
-    bbox_loss = tf.reduce_sum(
-            tf.reduce_sum(value * inside_mask, 1) * outside_mask) / normalizer
-
+    value = value.sum(dim=2)
+    value = value*outside_mask.unsqueeze(1)
+    value = value[jt.index((label.shape[0],),dim=0),jt.maximum(label,0)]
+    bbox_loss = value.sum() / bbox_pred.shape[0]
     return bbox_loss
 
 
-def iou_smooth_l1_loss_rcnn_r(self, bbox_pred, bbox_targets, label, rois, target_gt_r, num_classes, sigma=1.0):
-    '''
-    :param bbox_pred: [-1, (cfgs.CLS_NUM +1) * 5]
-    :param bbox_targets:[-1, (cfgs.CLS_NUM +1) * 5]
-    :param label:[-1]
-    :param num_classes:
-    :param sigma:
-    :return:
-    '''
+def iou_smooth_l1_loss_rcnn_r(bbox_pred, bbox_targets, label, rois, target_gt_r, num_classes, roi_scale_factor,epsilon=1e-5,sigma=1.0):
 
     outside_mask = (label>0).float32()
 
-    target_gt_r = tf.reshape(tf.tile(tf.reshape(target_gt_r, [-1, 1, 5]), [1, num_classes, 1]), [-1, 5])
-    x_c = (rois[:, 2] + rois[:, 0]) / 2
-    y_c = (rois[:, 3] + rois[:, 1]) / 2
-    h = rois[:, 2] - rois[:, 0] + 1
-    w = rois[:, 3] - rois[:, 1] + 1
-    theta = -90 * tf.ones_like(x_c)
-    rois = tf.transpose(tf.stack([x_c, y_c, w, h, theta]))
-    rois = tf.reshape(tf.tile(tf.reshape(rois, [-1, 1, 5]), [1, num_classes, 1]), [-1, 5])
+    target_gt_r = jt.reshape(jt.repeat(jt.reshape(target_gt_r, [-1, 1, 5]), [1, num_classes, 1]), [-1, 5])
+    x_c = (rois[:, 2:3] + rois[:, 0:1]) / 2
+    y_c = (rois[:, 3:4] + rois[:, 1:2]) / 2
+    h = rois[:, 2:3] - rois[:, 0:1] + 1
+    w = rois[:, 3:4] - rois[:, 1:2] + 1
+    theta = -90 * jt.ones_like(x_c)
+    rois = jt.contrib.concat([x_c, y_c, w, h, theta],dim=1)
+    rois = jt.reshape(jt.repeat(jt.reshape(rois, [-1, 1, 5]), [1, num_classes, 1]), [-1, 5])
 
-    boxes_pred = rbbox_transform_inv(boxes=rois, deltas=tf.reshape(bbox_pred, [-1, 5]),
-                                                        scale_factors=self.cfgs.ROI_SCALE_FACTORS)
-    overlaps = tf.py_func(iou_rotate_calculate2,
-                              inp=[tf.reshape(boxes_pred, [-1, 5]), tf.reshape(target_gt_r, [-1, 5])],
-                              Tout=[tf.float32])
-    overlaps = tf.reshape(overlaps, [-1, num_classes])
+    boxes_pred = rbbox_transform_inv(boxes=rois, deltas=jt.reshape(bbox_pred, [-1, 5]),scale_factors=roi_scale_factor)
+    overlaps = iou_rotate(boxes_pred,target_gt_r)
+    overlaps = jt.reshape(overlaps, [-1, num_classes])
 
-    bbox_pred = tf.reshape(bbox_pred, [-1, num_classes, 5])
-    bbox_targets = tf.reshape(bbox_targets, [-1, num_classes, 5])
+    bbox_pred = jt.reshape(bbox_pred, [-1, num_classes, 5])
+    bbox_targets = jt.reshape(bbox_targets, [-1, num_classes, 5])
 
     value = smooth_l1_loss_base(bbox_pred, bbox_targets, sigma=sigma)
-    value = tf.reduce_sum(value, 2)
-    value = tf.reshape(value, [-1, num_classes])
+    value = value.sum(2)
+    iou_factor = ((jt.exp(1 - overlaps) - 1) / (value + epsilon)).stop_grad()
 
-    inside_mask = tf.one_hot(tf.reshape(label, [-1, 1]),
-                                 depth=num_classes, axis=1)
-
-    inside_mask = tf.stop_gradient(
-            tf.to_float(tf.reshape(inside_mask, [-1, num_classes])))
-
-    iou_factor = tf.stop_gradient(tf.exp((1 - overlaps)) - 1) / (tf.stop_gradient(value) + self.cfgs.EPSILON)
-
-    regression_loss = tf.reduce_sum(value * inside_mask * iou_factor, 1)
-
-    normalizer = tf.to_float(tf.shape(bbox_pred)[0])
-    bbox_loss = tf.reduce_sum(regression_loss * outside_mask) / normalizer
+    value = value*iou_factor
+    value = value*outside_mask.unsqueeze(1)
+    regression_loss = value[jt.index((label.shape[0],),dim=0),jt.maximum(label,0)]
+    bbox_loss = regression_loss / bbox_pred.shape[0]
 
     return bbox_loss
 
 
-def attention_loss(self, mask, featuremap):
-    # shape = mask.get_shape().as_list()
-    shape = tf.shape(mask)
-    featuremap = tf.image.resize_bilinear(featuremap, [shape[0], shape[1]])
-
-    mask = tf.cast(mask, tf.int32)
-    mask = tf.reshape(mask, [-1, ])
-    featuremap = tf.reshape(featuremap, [-1, 2])
-    attention_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=mask, logits=featuremap)
-    attention_loss = tf.reduce_mean(attention_loss)
+def attention_loss(mask, featuremap):
+    # featuremap:[n,c,h,w]
+    # mask: [n,c,h,w]
+    featuremap = jt.nn.interpolate(featuremap, [mask.shape[-2],mask.shape[-1]])
+    mask = mask.reshape([-1, ]).int32()
+    featuremap = featuremap.reshape([-1, 2])
+    featuremap = featuremap.softmax(1)
+    attention_loss = jt.nn.cross_entropy_loss(featuremap,mask)
     return attention_loss
