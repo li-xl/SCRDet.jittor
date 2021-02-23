@@ -23,6 +23,12 @@ threshold = {'roundabout': 0.1, 'tennis-court': 0.3, 'swimming-pool': 0.1, 'stor
             'bridge': 0.0001, 'basketball-court': 0.3, 'baseball-diamond': 0.3}
 
 EPOCHS=10
+BATCH_SIZE=4
+LR = 0.001 * BATCH_SIZE 
+MOMENTUM = 0.9
+WEIGHT_DECAY = 0.0001
+NUM_WORKERS = 4
+
 save_checkpoint_path = "/mnt/disk/lxl/SCRDET"
 
 def train():
@@ -30,19 +36,19 @@ def train():
     train_dataset = DOTA(data_dir="/mnt/disk/lxl/dataset/DOTA_CROP/train",
                         classnames=CLASSNAMES,
                         transforms=train_transforms(),
-                        num_workers=0,
-                        shuffle=False,
-                        batch_size=4)
+                        num_workers=NUM_WORKERS,
+                        shuffle=True,
+                        batch_size=BATCH_SIZE)
     val_dataset = DOTA(data_dir="/mnt/disk/lxl/dataset/DOTA_CROP/val",
                         classnames=CLASSNAMES,
                         transforms=val_transforms(),
-                        num_workers=0,
+                        num_workers=NUM_WORKERS,
                         shuffle=False,
-                        batch_size=4)
+                        batch_size=BATCH_SIZE)
     
     scrdet = SCRDet(classnames = CLASSNAMES,r_nms_thresh=threshold)
 
-    optimizer = optim.SGD(scrdet.parameters(),momentum=0.9,lr=0.001)
+    optimizer = optim.SGD(scrdet.parameters(),momentum=MOMENTUM,lr=LR)
     
     writer = SummaryWriter()
     
@@ -67,7 +73,7 @@ def train():
             writer.add_scalar('total_loss', total_loss.item(), global_step=dataset_len*epoch+batch_idx)
             
             if batch_idx % 10 == 0:
-                print("total_loss",total_loss.item())
+                print("total_loss: %.4f"% total_loss.item())
         
         scrdet.eval()
         results = []

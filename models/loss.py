@@ -28,12 +28,9 @@ def smooth_l1_loss_rcnn(bbox_pred, bbox_targets, label, sigma=1.0):
     :return:
     '''
 
-    outside_mask = (label>0).float32()
-
     value = smooth_l1_loss_base(bbox_pred,bbox_targets,sigma=sigma)
-    value = value.sum(dim=2)
-    value = value*outside_mask.unsqueeze(1)
-    value = value[jt.index((label.shape[0],),dim=0),jt.maximum(label,0)]
+    value = value.sum(dim=1)
+    value = value*(label>0).float32()
     bbox_loss = value.sum() / bbox_pred.shape[0]
     return bbox_loss
 
@@ -42,17 +39,16 @@ def iou_smooth_l1_loss_rcnn_r(bbox_pred, bbox_targets, label,rois,sigma=1.0):
 
     outside_mask = (label>0).float32()
 
-    
     boxes_pred = loc2bbox_r(rois,bbox_pred)
     target_gt_r = loc2bbox_r(rois,bbox_targets)
     overlaps = iou_rotate(boxes_pred,target_gt_r)
 
     value = smooth_l1_loss_base(bbox_pred, bbox_targets, sigma=sigma)
-    value = value.sum(2)
+    value = value.sum(1)
     iou_factor = ((jt.exp(1 - overlaps) - 1) / (value + 1e-5)).stop_grad()
     value = value*iou_factor
     value = value*outside_mask
-    bbox_loss = value / bbox_pred.shape[0]
+    bbox_loss = value.sum() / bbox_pred.shape[0]
     return bbox_loss
 
 
@@ -63,6 +59,6 @@ def attention_loss(mask, featuremap):
     featuremap = jt.nn.interpolate(featuremap, [mask.shape[-2],mask.shape[-1]])
     mask = mask.reshape([-1, ]).int32()
     featuremap = featuremap.reshape([-1, 2])
-    featuremap = featuremap.softmax(1)
+    featuremap = jt.nn.softmax(featuremap,1)
     attention_loss = jt.nn.cross_entropy_loss(featuremap,mask)
     return attention_loss

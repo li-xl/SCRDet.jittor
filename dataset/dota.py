@@ -56,8 +56,8 @@ class DOTA(dataset.Dataset):
         horizen_boxes = convert_horizen_box(boxes,False)
         rotation_boxes = convert_rotation_box(boxes,False)
         mask = get_mask(h,w,rotation_boxes)
-
-        return img,horizen_boxes,rotation_boxes,labels,(h,w),mask,img_idx
+        
+        return img,horizen_boxes,rotation_boxes,labels,(w,h),mask,img_idx
 
     def collate_batch(self,batch):
         imgs = []

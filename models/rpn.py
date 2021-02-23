@@ -390,7 +390,7 @@ class RegionProposalNetwork(nn.Module):
                                               n_test_post_nms=n_test_pre_nms,
                                               min_size=min_size)
         n_anchor = self.anchor_base.shape[0]
-        self.conv1 = nn.Conv(in_channels, mid_channels, kernel_size=3, stride=1)
+        self.conv1 = nn.Conv(in_channels, mid_channels, kernel_size=3, stride=1,padding=1)
         self.score = nn.Conv(mid_channels, n_anchor * 2, kernel_size=1, stride=1)
         self.loc = nn.Conv(mid_channels, n_anchor * 4, kernel_size=1, stride=1,)
 
@@ -398,7 +398,7 @@ class RegionProposalNetwork(nn.Module):
         n, _, hh, ww = x.shape
         anchor = _enumerate_shifted_anchor(self.anchor_base,self.feat_stride, hh, ww)
         anchor = jt.array(anchor)
-
+        
         n_anchor = anchor.shape[0] // (hh * ww)
         h = nn.relu(self.conv1(x))
         

@@ -21,22 +21,22 @@ class SCRDet(nn.Module):
 
         self.rpn = RegionProposalNetwork(in_channels=512, 
                                         mid_channels=512, 
-                                        ratios=[0.5, 1, 2],
-                                        anchor_scales=[8, 16, 32], 
+                                        ratios=[0.5, 1., 2.0, 1/4.0, 4.0, 1/6.0, 6.0],
+                                        anchor_scales= [0.0625, 0.125, 0.25, 0.5, 1., 2.0], 
                                         feat_stride=8,
                                         nms_thresh=0.7,
                                         n_train_pre_nms=12000,
                                         n_train_post_nms=2000,
                                         n_test_pre_nms=6000,
-                                        n_test_post_nms=300,
+                                        n_test_post_nms=1000,
                                         min_size=16,)
 
-        self.anchor_target_creator = AnchorTargetCreator(n_sample=256,
+        self.anchor_target_creator = AnchorTargetCreator(n_sample=512,
                                                          pos_iou_thresh=0.7, 
                                                          neg_iou_thresh=0.3,
                                                          pos_ratio=0.5)
 
-        self.proposal_target_creator = ProposalTargetCreator(n_sample=128,
+        self.proposal_target_creator = ProposalTargetCreator(n_sample=512,
                                                              pos_ratio=0.25, 
                                                              pos_iou_thresh=0.5,
                                                              neg_iou_thresh_hi=0.5, 
@@ -44,7 +44,7 @@ class SCRDet(nn.Module):
         
         self.head = RoIHead(in_channels=512,
                             n_class=self.n_class,
-                            roi_size=7,
+                            roi_size=14,
                             spatial_scale=1.0,
                             sampling_ratio=0)
 
@@ -69,8 +69,9 @@ class SCRDet(nn.Module):
             index = jt.where(roi_indices == i)[0]
             roi = rois[index,:]
             box = hbb[i]
+            box_r = rbb[i]
             label = labels[i]
-            sample_roi, gt_roi_loc, gt_roi_loc_r,gt_roi_label = self.proposal_target_creator(roi,hbb,rbb,label)
+            sample_roi, gt_roi_loc, gt_roi_loc_r,gt_roi_label = self.proposal_target_creator(roi,box,box_r,label)
             sample_roi_index = i*jt.ones((sample_roi.shape[0],))
             
             sample_rois.append(sample_roi)
@@ -79,16 +80,14 @@ class SCRDet(nn.Module):
             gt_roi_locs_r.append(gt_roi_loc_r)
             sample_roi_indexs.append(sample_roi_index)
             
-            gt_rpn_loc, gt_rpn_label = self.anchor_target_creator(hbb,anchor,img_sizes)
+            gt_rpn_loc, gt_rpn_label = self.anchor_target_creator(box,anchor,img_sizes[i])
             gt_rpn_locs.append(gt_rpn_loc)
             gt_rpn_labels.append(gt_rpn_label)
             
         sample_roi_indexs = jt.contrib.concat(sample_roi_indexs,dim=0)
         sample_rois = jt.contrib.concat(sample_rois,dim=0)
         
-        print("3")
         bbox_pred_h,cls_score_h,bbox_pred_r,cls_score_r = self.head(feature,sample_rois,sample_roi_indexs)
-        print("4")
         # ------------------ RPN losses -------------------#
         rpn_locs = rpn_locs.reshape(-1,4)
         rpn_scores = rpn_scores.reshape(-1,2)
@@ -111,7 +110,7 @@ class SCRDet(nn.Module):
         n_sample_r = bbox_pred_r.shape[0]
         roi_cls_loc_r = bbox_pred_r.view(n_sample, -1, 5)
         roi_loc_r = roi_cls_loc_r[jt.arange(0, n_sample_r).int32(), gt_roi_labels]
-        roi_loc_loss_r = iou_smooth_l1_loss_rcnn_r(roi_loc_r,gt_roi_locs_r,gt_roi_labels,roi,self.roi_sigma)
+        roi_loc_loss_r = iou_smooth_l1_loss_rcnn_r(roi_loc_r,gt_roi_locs_r,gt_roi_labels,sample_rois,self.roi_sigma)
         roi_cls_loss_r = nn.cross_entropy_loss(cls_score_r, gt_roi_labels)
 
         # ------------------ Attention losses -------------------#
@@ -198,11 +197,10 @@ class SCRDet(nn.Module):
 
     def execute(self,batch_imgs,img_sizes,batch_masks=None,hbb=None,rbb=None,labels=None):
         # backbone
-        print("1")
         N = batch_imgs.shape[0]
         C3,C4 = self.backbone(batch_imgs)
+        
         feature,pa_mask = self.fpn(C3,C4)
-        print("2")
 
         if self.is_training():
             assert batch_masks is not None and hbb is not None and rbb is not None and labels is not None, "Model must has ground truth"

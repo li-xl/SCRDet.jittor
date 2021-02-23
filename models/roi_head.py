@@ -8,7 +8,7 @@ class RoIHead(nn.Module):
 
         self.roi = ROIAlign((roi_size, roi_size),spatial_scale,sampling_ratio=sampling_ratio)
 
-        self.fc1 = nn.Linear(49*1024,1024)
+        self.fc1 = nn.Linear(roi_size*roi_size*512,1024)
         self.fc2 = nn.Linear(1024,1024)
 
         self.cls_score_h = nn.Linear(1024,n_class)
