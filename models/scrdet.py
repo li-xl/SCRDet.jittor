@@ -23,7 +23,7 @@ class SCRDet(nn.Module):
                                         mid_channels=512, 
                                         ratios=[0.5, 1, 2],
                                         anchor_scales=[8, 16, 32], 
-                                        feat_stride=1,
+                                        feat_stride=8,
                                         nms_thresh=0.7,
                                         n_train_pre_nms=12000,
                                         n_train_post_nms=2000,
@@ -85,9 +85,10 @@ class SCRDet(nn.Module):
             
         sample_roi_indexs = jt.contrib.concat(sample_roi_indexs,dim=0)
         sample_rois = jt.contrib.concat(sample_rois,dim=0)
-
-        bbox_pred_h,cls_score_h,bbox_pred_r,cls_score_r = self.head(feature,sample_rois,sample_roi_indexs)
         
+        print("3")
+        bbox_pred_h,cls_score_h,bbox_pred_r,cls_score_r = self.head(feature,sample_rois,sample_roi_indexs)
+        print("4")
         # ------------------ RPN losses -------------------#
         rpn_locs = rpn_locs.reshape(-1,4)
         rpn_scores = rpn_scores.reshape(-1,2)
@@ -197,9 +198,11 @@ class SCRDet(nn.Module):
 
     def execute(self,batch_imgs,img_sizes,batch_masks=None,hbb=None,rbb=None,labels=None):
         # backbone
+        print("1")
         N = batch_imgs.shape[0]
         C3,C4 = self.backbone(batch_imgs)
         feature,pa_mask = self.fpn(C3,C4)
+        print("2")
 
         if self.is_training():
             assert batch_masks is not None and hbb is not None and rbb is not None and labels is not None, "Model must has ground truth"

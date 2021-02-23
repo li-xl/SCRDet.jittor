@@ -1,23 +1,25 @@
 import jittor as jt 
 from jittor import nn
 
+from models.modules import SameConv,AvgPool2d
+
 class InceptionModule(nn.Module):
     def __init__(self,):
         super(InceptionModule,self).__init__()
-        self.branch_0_conv = nn.Conv(512,out_channels=384,kernel_size=[1,1],stride=1)
+        self.branch_0_conv = SameConv(512,out_channels=384,kernel_size=(1,1),stride=1)
 
-        self.branch_1_conv1 = nn.Conv(512,out_channels=192,kernel_size=[1,1],stride=1)
-        self.branch_1_conv2 = nn.Conv(192,out_channels=224,kernel_size= [1, 7],stride=1)
-        self.branch_1_conv3 = nn.Conv(224,out_channels=256,kernel_size= [7, 1],stride=1)
+        self.branch_1_conv1 = SameConv(512,out_channels=192,kernel_size=(1,1),stride=1)
+        self.branch_1_conv2 = SameConv(192,out_channels=224,kernel_size= (1, 7),stride=1)
+        self.branch_1_conv3 = SameConv(224,out_channels=256,kernel_size= (7, 1),stride=1)
 
-        self.branch_2_conv1 = nn.Conv(512,out_channels=192,kernel_size=[1,1],stride=1)
-        self.branch_2_conv2 = nn.Conv(192,out_channels=192,kernel_size= [7, 1],stride=1)
-        self.branch_2_conv3 = nn.Conv(192,out_channels=224,kernel_size= [1, 7],stride=1)
-        self.branch_2_conv4 = nn.Conv(224,out_channels=224,kernel_size= [7, 1],stride=1)
-        self.branch_2_conv5 = nn.Conv(224,out_channels=256,kernel_size= [1, 7],stride=1)
+        self.branch_2_conv1 = SameConv(512,out_channels=192,kernel_size=(1,1),stride=1)
+        self.branch_2_conv2 = SameConv(192,out_channels=192,kernel_size= (7, 1),stride=1)
+        self.branch_2_conv3 = SameConv(192,out_channels=224,kernel_size= (1, 7),stride=1)
+        self.branch_2_conv4 = SameConv(224,out_channels=224,kernel_size= (7, 1),stride=1)
+        self.branch_2_conv5 = SameConv(224,out_channels=256,kernel_size= (1, 7),stride=1)
 
-        self.branch_3_avgpool = nn.AvgPool2d(kernel_size=[3,3],stride=1)
-        self.branch_3_conv = nn.Conv(512,out_channels=128,kernel_size= [1, 1],stride=1)
+        self.branch_3_avgpool = AvgPool2d(kernel_size=3,stride=1)
+        self.branch_3_conv = SameConv(512,out_channels=128,kernel_size= (1, 1),stride=1)
 
 
     def execute(self,x):
@@ -58,7 +60,7 @@ class InceptionAttention(nn.Module):
     def __init__(self,):
         super(InceptionAttention,self).__init__()
         self.inception_module = InceptionModule()
-        self.inception_attention_conv = nn.Conv(1024,out_channels=2,kernel_size=[3,3])
+        self.inception_attention_conv = SameConv(1024,out_channels=2,kernel_size=(3,3))
     
     def execute(self,x):
         x = self.inception_module(x)
@@ -70,7 +72,7 @@ class SFNet(nn.Module):
         super(SFNet,self).__init__()
         self.anchor_stride = anchor_stride
         self.inception_module = InceptionModule()
-        self.fusion_conv = nn.Conv(512,out_channels=512,kernel_size=[1, 1], stride=1)
+        self.fusion_conv = nn.Conv(1024,out_channels=512,kernel_size=(1, 1), stride=1)
 
     def fusion_two_layer(self, feat1, feat2):
         h, w = feat1.shape[-2], feat1.shape[-1]
@@ -95,7 +97,7 @@ class MDANet(nn.Module):
         super(MDANet,self).__init__()
         self.out_dim = out_dim
         self.inception_attention = InceptionAttention()
-        self.ca_fc1 = nn.Linear(1024,out_dim//ratio)
+        self.ca_fc1 = nn.Linear(512,out_dim//ratio)
         self.ca_fc2 = nn.Linear(out_dim//ratio,out_dim)
 
     def execute(self,x):
@@ -105,7 +107,7 @@ class MDANet(nn.Module):
         ca = nn.relu(ca)
         ca = self.ca_fc2(ca)
         ca = ca.sigmoid()
-        ca = jt.reshape(ca, [-1, 1, 1, self.out_dim])
+        ca = jt.reshape(ca, [-1,self.out_dim,1, 1])
 
         # Pixel Attention
         pa_mask = self.inception_attention(x)

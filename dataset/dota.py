@@ -11,7 +11,7 @@ def get_mask(h,w, boxes):
     boxes = convert_coordinate(boxes,False)
     mask = np.zeros([h, w])
     for b in boxes:
-        b = np.reshape(b[0:-1], [4, 2])
+        b = np.reshape(b, [4, 2])
         rect = np.array(b, np.int32)
         cv2.fillConvexPoly(mask, rect, 1)
     # mask = cv2.resize(mask, dsize=(h // 16, w // 16))
@@ -42,6 +42,7 @@ class DOTA(dataset.Dataset):
         anno_path = os.path.join(self.data_dir,"labeltxt",f"{img_idx}.json")
 
         img = Image.open(img_path)
+        img = img.convert("RGB")
         anno = json.load(open(anno_path))["objects"]
         
         boxes = np.array([a["boxes"] for a in anno],dtype=np.float32)
@@ -52,8 +53,8 @@ class DOTA(dataset.Dataset):
         
         h,w = img.shape[-2],img.shape[-1]
         
-        horizen_boxes = convert_horizen_box(boxes)
-        rotation_boxes = convert_rotation_box(boxes)
+        horizen_boxes = convert_horizen_box(boxes,False)
+        rotation_boxes = convert_rotation_box(boxes,False)
         mask = get_mask(h,w,rotation_boxes)
 
         return img,horizen_boxes,rotation_boxes,labels,(h,w),mask,img_idx

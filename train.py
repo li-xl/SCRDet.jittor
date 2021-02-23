@@ -1,4 +1,5 @@
 from tqdm import tqdm
+import jittor as jt
 from jittor import optim
 import argparse
 import sys
@@ -7,6 +8,7 @@ import pickle
 import os
 from tensorboardX import SummaryWriter
 from dataset.dota import DOTA
+from dataset.transforms import train_transforms,val_transforms
 from models.scrdet import SCRDet
 from utils.ap_eval import calculate_VOC_mAP,calculate_VOC_mAP_r
 
@@ -27,14 +29,14 @@ def train():
     jt.flags.use_cuda=1
     train_dataset = DOTA(data_dir="/mnt/disk/lxl/dataset/DOTA_CROP/train",
                         classnames=CLASSNAMES,
-                        transforms=None,
-                        num_workers=4,
+                        transforms=train_transforms(),
+                        num_workers=0,
                         shuffle=False,
                         batch_size=4)
     val_dataset = DOTA(data_dir="/mnt/disk/lxl/dataset/DOTA_CROP/val",
                         classnames=CLASSNAMES,
-                        transforms=None,
-                        num_workers=4,
+                        transforms=val_transforms(),
+                        num_workers=0,
                         shuffle=False,
                         batch_size=4)
     

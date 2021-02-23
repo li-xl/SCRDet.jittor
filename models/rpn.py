@@ -390,11 +390,11 @@ class RegionProposalNetwork(nn.Module):
                                               n_test_post_nms=n_test_pre_nms,
                                               min_size=min_size)
         n_anchor = self.anchor_base.shape[0]
-        self.conv1 = nn.Conv(in_channels, mid_channels, 3, 1, 1)
-        self.score = nn.Conv(mid_channels, n_anchor * 2, 1, 1, 0)
-        self.loc = nn.Conv(mid_channels, n_anchor * 4, 1, 1, 0)
+        self.conv1 = nn.Conv(in_channels, mid_channels, kernel_size=3, stride=1)
+        self.score = nn.Conv(mid_channels, n_anchor * 2, kernel_size=1, stride=1)
+        self.loc = nn.Conv(mid_channels, n_anchor * 4, kernel_size=1, stride=1,)
 
-    def execute(self, x, img_size):
+    def execute(self, x, img_sizes):
         n, _, hh, ww = x.shape
         anchor = _enumerate_shifted_anchor(self.anchor_base,self.feat_stride, hh, ww)
         anchor = jt.array(anchor)
@@ -418,7 +418,7 @@ class RegionProposalNetwork(nn.Module):
                                     rpn_locs[i],
                                     rpn_fg_scores[i],
                                     anchor, 
-                                    img_size,
+                                    img_sizes[i],
                                     1.0/self.feat_stride)
             batch_index = i * jt.ones((len(roi),), dtype='int32')
             rois.append(roi)
