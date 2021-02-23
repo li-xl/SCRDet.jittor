@@ -102,7 +102,7 @@ def prepare_dota(part_name="val"):
     np.random.seed(0)
     data_dir = f"/mnt/disk/lxl/dataset/DOTA/{part_name}"
     save_dir = f"/mnt/disk/lxl/dataset/DOTA_CROP/{part_name}"
-    img_h, img_w, h_overlap, w_overlap = 800, 800, 600, 600
+    img_h, img_w, stride_h, stride_w = 800, 800, 600, 600
 
     image_files = glob.glob(f"{data_dir}/images/*.png")
     for img_f in image_files:
@@ -110,7 +110,7 @@ def prepare_dota(part_name="val"):
         img = cv2.imread(img_f,cv2.IMREAD_UNCHANGED)
         box = read_data(txt_f,CLASSNAMES)
         if len(box)>0:
-            clip_image(img_f.split("/")[-1].strip('.png'), img, box, img_w, img_h, w_overlap, h_overlap,save_dir)
+            clip_image(img_f.split("/")[-1].strip('.png'), img, box, img_w, img_h, stride_w, stride_h,save_dir)
 
 if __name__ == '__main__':
     prepare_dota(part_name="train")

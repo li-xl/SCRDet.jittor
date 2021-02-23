@@ -33,7 +33,7 @@ class Resize(object):
                 size = int(round(max_size * min_original_size / max_original_size))
 
         if (w <= h and w == size) or (h <= w and h == size):
-            return (h, w)
+            return (w, h)
 
         if w < h:
             ow = size
@@ -83,8 +83,8 @@ class Normalize(object):
         return image, target
     
     
-def build_transforms(min_size=400,
-                     max_size=2048,
+def build_transforms(min_size=800,
+                     max_size=800,
                      flip_horizontal_prob=0.5,
                      mean=[102.9801, 115.9465, 122.7717],
                      std = [1.,1.,1.],
