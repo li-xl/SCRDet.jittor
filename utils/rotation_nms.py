@@ -299,11 +299,9 @@ int boxes_num = dets_sorted_shape0;
 float *boxes_dev = dets_sorted_p;
 
 const int col_blocks = DIVUP(boxes_num, threadsPerBlock);
-int matrices_size = dets_num * col_blocks*sizeof(unsigned long long);
+int matrices_size = boxes_num * col_blocks*sizeof(unsigned long long);
 size_t mask_allocation;
 unsigned long long* mask_dev = (unsigned long long*)exe.allocator->alloc(matrices_size, mask_allocation);
-  
-
 dim3 blocks(DIVUP(boxes_num, threadsPerBlock),DIVUP(boxes_num, threadsPerBlock));
 dim3 threads(threadsPerBlock);
 rotate_nms_kernel<<<blocks, threads>>>(boxes_num,
@@ -314,25 +312,35 @@ rotate_nms_kernel<<<blocks, threads>>>(boxes_num,
 checkCudaErrors(cudaDeviceSynchronize());
 std::vector<unsigned long long> remv(col_blocks);
 memset(&remv[0], 0, sizeof(unsigned long long) * col_blocks);
-memset(keep_p, 0, dets_num);
+memset(keep_p, 0, boxes_num);
 auto keep_out = keep_p;
-for (int i = 0; i < dets_num; i++) {
+for (int i = 0; i < boxes_num; i++) {
   int nblock = i / threadsPerBlock;
   int inblock = i % threadsPerBlock;
   if (!(remv[nblock] & (1ULL << inblock))) {
     keep_out[i] = true;
-    unsigned long long* p = mask_p + i * col_blocks;
+    unsigned long long* p = mask_dev + i * col_blocks;
     for (int j = nblock; j < col_blocks; j++) {
       remv[j] |= p[j];
     }
   }
 }
-exe.allocator->free(mask_p, matrices_size, mask_allocation);
+exe.allocator->free(mask_dev, matrices_size, mask_allocation);
 '''
 
 def rotate_nms(dets,thresh):
     order = jt.argsort(dets[:,5],descending=True)[0]
-    dets_sorted = dets[order,:4]
+    dets_sorted = dets[order,:]
     dets_num  = dets_sorted.shape[0]
     keep = jt.code((dets_num,),'bool',[dets_sorted],cuda_header=CUDA_HEADER,cuda_src=f'float nms_overlap_thresh={thresh};'+CUDA_SRC)
     return order[keep]
+
+
+def test():
+    jt.flags.use_cuda=1
+    bbox = jt.array([[1,1.2,4,5,60,0.1],[1,1.2,4,5,70,0.2],[1,2,3,4,1.0,0.3],[5,6,7,8,9,0.4]])
+    keep = rotate_nms(jt.array(bbox),thresh)
+    print(keep) 
+
+if __name__ == '__main__':
+    test()

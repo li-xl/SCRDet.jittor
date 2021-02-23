@@ -2,10 +2,12 @@ from tqdm import tqdm
 import jittor as jt
 from jittor import optim
 import argparse
+import random
 import sys
 import glob
 import pickle
 import os
+import numpy as np
 from tensorboardX import SummaryWriter
 from dataset.dota import DOTA
 from dataset.transforms import train_transforms,val_transforms
@@ -20,7 +22,7 @@ CLASSNAMES = ['plane', 'baseball-diamond', 'bridge', 'ground-track-field',
 threshold = {'roundabout': 0.1, 'tennis-court': 0.3, 'swimming-pool': 0.1, 'storage-tank': 0.2,
             'soccer-ball-field': 0.3, 'small-vehicle': 0.2, 'ship': 0.2, 'plane': 0.3,
             'large-vehicle': 0.1, 'helicopter': 0.2, 'harbor': 0.0001, 'ground-track-field': 0.3,
-            'bridge': 0.0001, 'basketball-court': 0.3, 'baseball-diamond': 0.3}
+            'bridge': 0.0001, 'basketball-court': 0.3, 'baseball-diamond': 0.3,'container-crane':0.3}
 
 EPOCHS=10
 BATCH_SIZE=4
@@ -74,11 +76,14 @@ def train():
             
             if batch_idx % 10 == 0:
                 print("total_loss: %.4f"% total_loss.item())
-        
+
+        os.makedirs(save_checkpoint_path,exist_ok=True)
+        scrdet.save(f"{save_checkpoint_path}/checkpoint_{epoch}.pkl")
+
         scrdet.eval()
         results = []
         results_r = []
-        for batch_idx,(batch_imgs,batch_masks,img_sizes,hbb,rbb,labels,ids) in enumerate(val_dataset):
+        for batch_idx,(batch_imgs,batch_masks,img_sizes,hbb,rbb,labels,ids) in tqdm(enumerate(val_dataset)):
             result,result_r = scrdet(batch_imgs,img_sizes)
             for i in range(len(ids)):
                 pred_boxes,pred_scores,pred_labels = result[i]
@@ -94,8 +99,7 @@ def train():
         mAP_r,_ = calculate_VOC_mAP(results_r,CLASSNAMES,use_07_metric=False)
         writer.add_scalar('map', mAP, global_step=epoch)
         writer.add_scalar('map_r', mAP_r, global_step=epoch)
-        os.makedirs(save_checkpoint_path,exist_ok=True)
-        scrdet.save(f"{save_checkpoint_path}/checkpoint_{epoch}.pkl")
+        
 
 if __name__ == "__main__":
     train()

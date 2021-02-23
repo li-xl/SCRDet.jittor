@@ -59,6 +59,5 @@ def attention_loss(mask, featuremap):
     featuremap = jt.nn.interpolate(featuremap, [mask.shape[-2],mask.shape[-1]])
     mask = mask.reshape([-1, ]).int32()
     featuremap = featuremap.reshape([-1, 2])
-    featuremap = jt.nn.softmax(featuremap,1)
     attention_loss = jt.nn.cross_entropy_loss(featuremap,mask)
     return attention_loss

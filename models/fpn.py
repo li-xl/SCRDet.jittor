@@ -112,7 +112,7 @@ class MDANet(nn.Module):
         # Pixel Attention
         pa_mask = self.inception_attention(x)
         pa_mask_softmax = nn.softmax(pa_mask)
-        pa = pa_mask_softmax[:, 0:1,:, :]
+        pa = pa_mask_softmax[:, 1:,:, :]
 
         x = pa*x
         x = ca*x
