@@ -175,7 +175,7 @@ class SCRDet(nn.Module):
                 bbox_j_r = bbox_j_r[mask_r,:]
                 score_j_r = score_j_r[mask_r]
                 dets_r = jt.contrib.concat([bbox_j_r,score_j_r.unsqueeze(1)],dim=1)
-                keep_r = rotate_nms(dets_r,self.test_nms_thresh_r[classname])
+                keep_r = rotate_nms(dets_r,0.3)
                 bbox_j_r = bbox_j_r[keep_r]
                 score_j_r = score_j_r[keep_r]
                 label_j_r = jt.ones_like(score_j_r).int32()*j

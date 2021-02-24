@@ -25,14 +25,20 @@ threshold = {'roundabout': 0.1, 'tennis-court': 0.3, 'swimming-pool': 0.1, 'stor
             'large-vehicle': 0.1, 'helicopter': 0.2, 'harbor': 0.0001, 'ground-track-field': 0.3,
             'bridge': 0.0001, 'basketball-court': 0.3, 'baseball-diamond': 0.3,'container-crane':0.3}
 
-EPOCHS=10
+EPOCHS=30
 BATCH_SIZE=4
 LR = 0.001 * BATCH_SIZE 
 MOMENTUM = 0.9
 WEIGHT_DECAY = 0.0001
 NUM_WORKERS = 4
 
-save_checkpoint_path = "/mnt/disk/lxl/SCRDET"
+if jt.in_mpi:
+    world_rank = jt.mpi.world_rank()
+    is_main = (world_rank == 0)
+else:
+    is_main = True
+
+save_checkpoint_path = "/mnt/disk/lxl/SCRDET_0"
 data_dir = '/mnt/disk/lxl/dataset/DOTA_CROP'
 
 def test(save_result=True,display_img=True):
@@ -88,7 +94,7 @@ def train():
     
     scrdet = SCRDet(classnames = CLASSNAMES,r_nms_thresh=threshold)
 
-    optimizer = optim.SGD(scrdet.parameters(),momentum=MOMENTUM,lr=LR)
+    optimizer = optim.SGD(scrdet.parameters(),momentum=MOMENTUM,lr=LR,weight_decay=WEIGHT_DECAY)
     
     writer = SummaryWriter()
     
@@ -102,21 +108,23 @@ def train():
             att_loss,total_loss = scrdet(batch_imgs,img_sizes,batch_masks,hbb,rbb,labels)
             
             optimizer.step(total_loss)
-
-            writer.add_scalar('rpn_cls_loss', rpn_cls_loss.item(), global_step=dataset_len*epoch+batch_idx)
-            writer.add_scalar('rpn_loc_loss', rpn_loc_loss.item(), global_step=dataset_len*epoch+batch_idx)
-            writer.add_scalar('roi_loc_loss', roi_loc_loss.item(), global_step=dataset_len*epoch+batch_idx)
-            writer.add_scalar('roi_cls_loss', roi_cls_loss.item(), global_step=dataset_len*epoch+batch_idx)
-            writer.add_scalar('roi_loc_loss_r', roi_loc_loss_r.item(), global_step=dataset_len*epoch+batch_idx)
-            writer.add_scalar('roi_cls_loss_r', roi_cls_loss_r.item(), global_step=dataset_len*epoch+batch_idx)
-            writer.add_scalar('att_loss', att_loss.item(), global_step=dataset_len*epoch+batch_idx)
-            writer.add_scalar('total_loss', total_loss.item(), global_step=dataset_len*epoch+batch_idx)
+            
+            if is_main:
+                writer.add_scalar('rpn_cls_loss', rpn_cls_loss.item(), global_step=dataset_len*epoch+batch_idx)
+                writer.add_scalar('rpn_loc_loss', rpn_loc_loss.item(), global_step=dataset_len*epoch+batch_idx)
+                writer.add_scalar('roi_loc_loss', roi_loc_loss.item(), global_step=dataset_len*epoch+batch_idx)
+                writer.add_scalar('roi_cls_loss', roi_cls_loss.item(), global_step=dataset_len*epoch+batch_idx)
+                writer.add_scalar('roi_loc_loss_r', roi_loc_loss_r.item(), global_step=dataset_len*epoch+batch_idx)
+                writer.add_scalar('roi_cls_loss_r', roi_cls_loss_r.item(), global_step=dataset_len*epoch+batch_idx)
+                writer.add_scalar('att_loss', att_loss.item(), global_step=dataset_len*epoch+batch_idx)
+                writer.add_scalar('total_loss', total_loss.item(), global_step=dataset_len*epoch+batch_idx)
             
             if batch_idx % 10 == 0:
                 print("total_loss: %.4f"% total_loss.item())
-
-        os.makedirs(save_checkpoint_path,exist_ok=True)
-        scrdet.save(f"{save_checkpoint_path}/checkpoint_{epoch}.pkl")
+        
+        if is_main:
+            os.makedirs(save_checkpoint_path,exist_ok=True)
+            scrdet.save(f"{save_checkpoint_path}/checkpoint_{epoch}.pkl")
 
         scrdet.eval()
         results = []
@@ -136,6 +144,7 @@ def train():
             
         mAP,_ = calculate_VOC_mAP(results,CLASSNAMES,use_07_metric=False)
         mAP_r,_ = calculate_VOC_mAP_r(results_r,CLASSNAMES,use_07_metric=False)
+        print(mAP,mAP_r)
         writer.add_scalar('map', mAP, global_step=epoch)
         writer.add_scalar('map_r', mAP_r, global_step=epoch)
         
