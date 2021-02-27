@@ -3,3 +3,6 @@ __pycache__
 test*
 runs
 *.pkl
+tmp
+runs*
+*weights

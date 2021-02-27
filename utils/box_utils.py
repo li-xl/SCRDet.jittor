@@ -295,7 +295,11 @@ def convert_coordinate(coordinate, with_label=True):
             box = cv2.boxPoints(((rect[0], rect[1]), (rect[2], rect[3]), rect[4]))
             box = np.reshape(box, [-1, ])
             boxes.append([box[0], box[1], box[2], box[3], box[4], box[5], box[6], box[7]])
-
+    if len(boxes)==0:
+        if with_label:
+            return np.zeros((0,9),dtype=np.float32)
+        else:
+            return np.zeros((0,8),dtype=np.float32)
     return np.array(boxes, dtype=np.float32)
 
 def bbox8_flip(bbox,img_size):

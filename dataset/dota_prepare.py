@@ -7,7 +7,7 @@ import json
 import glob
 sys.path.append("./")
 
-from utils.box_utils import convert_rotation_box
+from utils.box_utils import convert_rotation_box,convert_horizen_box
 
 
 
@@ -15,6 +15,25 @@ CLASSNAMES = ['plane', 'baseball-diamond', 'bridge', 'ground-track-field',
               'small-vehicle', 'large-vehicle', 'ship','tennis-court', 'basketball-court',
               'storage-tank', 'soccer-ball-field','roundabout', 'harbor',
               'swimming-pool', 'helicopter', 'container-crane']
+
+def summary():
+    files = list(glob.glob("/mnt/disk/lxl/dataset/DOTA_CROP/val/labeltxt/*.json"))
+    files += list(glob.glob("/mnt/disk/lxl/dataset/DOTA_CROP/train/labeltxt/*.json"))
+    l = len(files)
+    ws = []
+    hs = []
+    for i,f in enumerate(files):
+        data = json.load(open(f))
+        o = data["objects"]
+        bbox = convert_horizen_box([oo["boxes"] for oo in o],False)
+        for box in bbox:
+            w = box[2]-box[0]
+            h = box[3]-box[1]
+            ws.append(w)
+            hs.append(h)
+    print("Min:",np.min(ws),np.min(hs))
+    print("Max:",np.max(ws),np.max(hs))
+
 
 def save_json(save_file,idx,objects,img_w,img_h,classnames):
     data = {
@@ -101,8 +120,8 @@ def clip_image(file_idx, image, boxes_all, width, height, stride_w, stride_h,sav
 def prepare_dota(part_name="val"):
     np.random.seed(0)
     data_dir = f"/mnt/disk/lxl/dataset/DOTA/{part_name}"
-    save_dir = f"/mnt/disk/lxl/dataset/DOTA_CROP/{part_name}"
-    img_h, img_w, stride_h, stride_w = 800, 800, 600, 600
+    save_dir = f"/mnt/disk/lxl/dataset/DOTA_CROP/trainval"
+    img_h, img_w, stride_h, stride_w = 600, 600, 450, 450
 
     image_files = glob.glob(f"{data_dir}/images/*.png")
     for img_f in image_files:
@@ -114,3 +133,5 @@ def prepare_dota(part_name="val"):
 
 if __name__ == '__main__':
     prepare_dota(part_name="train")
+    prepare_dota(part_name="val")
+    # summary()

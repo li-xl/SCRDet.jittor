@@ -100,7 +100,7 @@ def build_transforms(min_size=800,
     return transform
 
 def train_transforms():
-    return build_transforms(mean=[123.68, 116.779, 103.939],std=[0.229, 0.224, 0.225])
+    return build_transforms()#flip_horizontal_prob=0.5,mean=[123.68, 116.779, 103.939],std=[0.229, 0.224, 0.225])
 
 def val_transforms():
-    return build_transforms(flip_horizontal_prob=0.0,mean=[123.68, 116.779, 103.939],std=[0.229, 0.224, 0.225])
+    return build_transforms(flip_horizontal_prob=0.0)#,mean=[123.68, 116.779, 103.939],std=[0.229, 0.224, 0.225])

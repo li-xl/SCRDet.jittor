@@ -41,8 +41,9 @@ class DOTA(dataset.Dataset):
         img_path = os.path.join(self.data_dir,"images",f"{img_idx}.png")
         anno_path = os.path.join(self.data_dir,"labeltxt",f"{img_idx}.json")
 
-        img = Image.open(img_path)
-        img = img.convert("RGB")
+        img = cv2.imread(img_path)
+        img = Image.fromarray(cv2.cvtColor(img,cv2.COLOR_BGR2RGB))
+
         anno = json.load(open(anno_path))["objects"]
         
         boxes = np.array([a["boxes"] for a in anno],dtype=np.float32)
@@ -85,4 +86,43 @@ class DOTA(dataset.Dataset):
 
         return batch_imgs,batch_masks,img_sizes,hbb,rbb,ll,ids
 
+
+
+class TESTDOTA(dataset.Dataset):
+    def __init__(self,img_list,transforms=None,num_workers=1,shuffle=False,batch_size=1):
+        super(TESTDOTA,self).__init__(num_workers=num_workers,shuffle=shuffle,batch_size=batch_size)
+        self.img_list = img_list
+        self.transforms = transforms
+        self.total_len = len(img_list)
+
+    def __getitem__(self,index):
+        img_path = self.img_list[index]
+        img_idx = img_path.split("/")[-1].split(".")[0]
+
+        img = cv2.imread(img_path,cv2.IMREAD_UNCHANGED)
+        img = Image.fromarray(cv2.cvtColor(img,cv2.COLOR_BGR2RGB))
+
+        
+        if self.transforms is not None:
+            img,_ = self.transforms(img,None)
+        
+        h,w = img.shape[-2],img.shape[-1]
+        
+        return img,(w,h),img_idx
+
+    def collate_batch(self,batch):
+        imgs = []
+        img_sizes = []
+        ids = []
+        max_size = np.array([0,0])
+        for img,img_size,img_idx in batch:
+            imgs.append(img)
+            img_sizes.append(img_size)
+            ids.append(img_idx)
+            max_size = np.maximum(max_size,img_size)
+        batch_imgs = np.zeros((len(imgs),3,max_size[1],max_size[0]),dtype=np.float32)
+        for i,(img,size) in enumerate(zip(imgs,img_sizes)):
+            batch_imgs[i,:,:size[1],:size[0]]=img
+
+        return batch_imgs,img_sizes,ids
 

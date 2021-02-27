@@ -5,16 +5,17 @@ from models.resnet import resnet50
 from models.fpn import SCRDetFPN
 from models.rpn import RegionProposalNetwork,AnchorTargetCreator,ProposalCreator,ProposalTargetCreator
 from models.roi_head import RoIHead
-from models.loss import smooth_l1_loss_rcnn,iou_smooth_l1_loss_rcnn_r,attention_loss
+from models.loss import smooth_l1_loss_rcnn,smooth_l1_loss_rpn,iou_smooth_l1_loss_rcnn_r,attention_loss
 from utils.box_utils import loc2bbox_r,loc2bbox
 from utils.rotation_nms import rotate_nms
+from utils.visualize import visualize_attention
 
 
 class SCRDet(nn.Module):
 
-    def __init__(self,classnames,r_nms_thresh):
+    def __init__(self,classnames):
         super(SCRDet,self).__init__()
-        self.backbone = resnet50(pretrained=True)
+        self.backbone = resnet50(pretrained=False)
         self.fpn = SCRDetFPN(anchor_stride=8,out_dim=512,ratio=16)
         self.n_class = len(classnames)+1
         self.classnames = classnames
@@ -29,7 +30,7 @@ class SCRDet(nn.Module):
                                         n_train_post_nms=2000,
                                         n_test_pre_nms=6000,
                                         n_test_post_nms=1000,
-                                        min_size=16,)
+                                        min_size=1.,)
 
         self.anchor_target_creator = AnchorTargetCreator(n_sample=512,
                                                          pos_iou_thresh=0.7, 
@@ -45,16 +46,16 @@ class SCRDet(nn.Module):
         self.head = RoIHead(in_channels=512,
                             n_class=self.n_class,
                             roi_size=14,
-                            spatial_scale=1.0,
+                            spatial_scale=1.0/8,
                             sampling_ratio=0)
 
         self.rpn_sigma = 3.0
         self.roi_sigma = 1.0
-        self.test_score_thresh = 0.001
+        self.test_score_thresh = 0.05
         self.test_nms_thresh = 0.3
-        self.test_nms_thresh_r = r_nms_thresh
+        self.test_nms_thresh_r = 0.2
 
-    def _forward_train(self,feature,pa_mask,img_sizes,batch_masks,hbb,rbb,labels):
+    def _forward_train(self,feature,pa_mask,img_sizes,batch_masks,hbb,rbb,labels,img_ids):
         N = feature.shape[0]
         rpn_locs, rpn_scores, rois, roi_indices, anchor = self.rpn(feature, img_sizes)
         
@@ -67,6 +68,7 @@ class SCRDet(nn.Module):
         gt_rpn_labels = []
         for i in range(N):
             index = jt.where(roi_indices == i)[0]
+            img_id = img_ids[i]
             roi = rois[index,:]
             box = hbb[i]
             box_r = rbb[i]
@@ -93,7 +95,7 @@ class SCRDet(nn.Module):
         rpn_scores = rpn_scores.reshape(-1,2)
         gt_rpn_labels = jt.contrib.concat(gt_rpn_labels,dim=0)
         gt_rpn_locs = jt.contrib.concat(gt_rpn_locs,dim=0)
-        rpn_loc_loss = smooth_l1_loss_rcnn(rpn_locs,gt_rpn_locs,gt_rpn_labels,self.rpn_sigma)
+        rpn_loc_loss = smooth_l1_loss_rpn(rpn_locs,gt_rpn_locs,gt_rpn_labels,self.rpn_sigma)
         rpn_cls_loss = nn.cross_entropy_loss(rpn_scores[gt_rpn_labels>=0,:],gt_rpn_labels[gt_rpn_labels>=0])
         
         # ------------------ ROI losses (fast rcnn loss) -------------------#
@@ -115,6 +117,7 @@ class SCRDet(nn.Module):
 
         # ------------------ Attention losses -------------------#
         att_loss = attention_loss(batch_masks,pa_mask)
+        # att_loss = jt.array([0.]) 
 
         losses = [rpn_loc_loss, rpn_cls_loss, roi_loc_loss, roi_cls_loss,roi_loc_loss_r,roi_cls_loss_r,att_loss]
         losses = losses + [sum(losses)]
@@ -122,7 +125,9 @@ class SCRDet(nn.Module):
     
     def _forward_test(self,features,img_size,batch_size):
         rpn_locs, rpn_scores, rois, roi_indices, _ = self.rpn(features, img_size)
+        # print(rois)
         bbox_pred_h,cls_score_h,bbox_pred_r,cls_score_r = self.head(features, rois, roi_indices)
+        # print(cls_score_h.shape,nn.softmax(cls_score_h,-1).argmax(-1)[0])
         return self._build_result(batch_size,img_size,rois,roi_indices,bbox_pred_h,bbox_pred_r,cls_score_h,cls_score_r)
     
     def _build_result(self,batch_size,image_sizes,rois,roi_indices,bbox_pred_h,bbox_pred_r,cls_score_h,cls_score_r):
@@ -154,7 +159,6 @@ class SCRDet(nn.Module):
             scores_r = []
             labels_r = []
             for j in range(1,n_class):
-                classname = self.classnames[j-1]
                 bbox_j = bbox[:,j,:]
                 score_j = score[:,j]
                 mask = jt.where(score_j>self.test_score_thresh)[0]
@@ -175,7 +179,7 @@ class SCRDet(nn.Module):
                 bbox_j_r = bbox_j_r[mask_r,:]
                 score_j_r = score_j_r[mask_r]
                 dets_r = jt.contrib.concat([bbox_j_r,score_j_r.unsqueeze(1)],dim=1)
-                keep_r = rotate_nms(dets_r,0.3)
+                keep_r = rotate_nms(dets_r,self.test_nms_thresh_r)
                 bbox_j_r = bbox_j_r[keep_r]
                 score_j_r = score_j_r[keep_r]
                 label_j_r = jt.ones_like(score_j_r).int32()*j
@@ -195,16 +199,20 @@ class SCRDet(nn.Module):
         return results,results_r
 
 
-    def execute(self,batch_imgs,img_sizes,batch_masks=None,hbb=None,rbb=None,labels=None):
+    def execute(self,batch_imgs,img_sizes,batch_masks=None,hbb=None,rbb=None,labels=None,img_ids=None,batch_idx=0):
         # backbone
         N = batch_imgs.shape[0]
         C3,C4 = self.backbone(batch_imgs)
         
         feature,pa_mask = self.fpn(C3,C4)
+        # feature,pa_mask = C3,None
+        
+        # if batch_idx % 2==0:
+        #     visualize_attention(img_ids,nn.softmax(pa_mask,dim=1),batch_masks)
 
         if self.is_training():
             assert batch_masks is not None and hbb is not None and rbb is not None and labels is not None, "Model must has ground truth"
-            return self._forward_train(feature,pa_mask,img_sizes,batch_masks,hbb,rbb,labels)
+            return self._forward_train(feature,pa_mask,img_sizes,batch_masks,hbb,rbb,labels,img_ids)
         else:
             return self._forward_test(feature,img_sizes,N)
         

@@ -8,6 +8,9 @@ class RoIHead(nn.Module):
 
         self.roi = ROIAlign((roi_size, roi_size),spatial_scale,sampling_ratio=sampling_ratio)
 
+        self.maxpool = nn.Pool(kernel_size=2, stride=2, op='maximum')
+        
+        roi_size = roi_size//2
         self.fc1 = nn.Linear(roi_size*roi_size*512,1024)
         self.fc2 = nn.Linear(1024,1024)
 
@@ -22,6 +25,7 @@ class RoIHead(nn.Module):
         # fc layers
         indices_and_rois = jt.contrib.concat([roi_indices.unsqueeze(1), rois], dim=1)
         x = self.roi(x, indices_and_rois)
+        x = self.maxpool(x)
         x = x.reshape(x.shape[0],-1)
         x = self.fc1(x)
         x = nn.relu(x)

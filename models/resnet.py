@@ -80,6 +80,31 @@ class Bottleneck(nn.Module):
         out = self.relu(out)
         return out
 
+class Stem3x3(nn.Module):
+    def __init__(self,norm_layer):
+        super(Stem3x3,self).__init__()
+        self.conv1 = nn.Conv(3,32,kernel_size=(3,3),padding=1,bias=False)
+        self.bn1 = norm_layer(32)
+        self.conv2 = nn.Conv(32,32,kernel_size=(3,3),padding=1,bias=False)
+        self.bn2 = norm_layer(32)
+        self.conv3= nn.Conv(32,64,kernel_size=(3,3),padding=1,bias=False)
+        self.bn3 = norm_layer(64)
+        self.maxpool = nn.Pool(kernel_size=3, stride=2, padding=1, op='maximum')
+    
+    def execute(self,x):
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = nn.relu(x)
+        x = self.conv2(x)
+        x = self.bn2(x)
+        x = nn.relu(x)
+        x = self.conv3(x)
+        x = self.bn3(x)
+        x = nn.relu(x)
+        x = self.maxpool(x)
+        return x
+
+
 class ResNet(nn.Module):
 
     def __init__(self, block, layers, num_classes=1000, zero_init_residual=False, groups=1, width_per_group=64, replace_stride_with_dilation=None, norm_layer=None):
@@ -95,26 +120,28 @@ class ResNet(nn.Module):
             raise ValueError('replace_stride_with_dilation should be None or a 3-element tuple, got {}'.format(replace_stride_with_dilation))
         self.groups = groups
         self.base_width = width_per_group
-        self.conv1 = nn.Conv(3, self.inplanes, kernel_size=7, stride=2, padding=3, bias=False)
-        jt.init.relu_invariant_gauss_(self.conv1.weight, mode="fan_out")
-        self.bn1 = norm_layer(self.inplanes)
-        self.relu = nn.Relu()
-        self.maxpool = nn.Pool(kernel_size=3, stride=2, padding=1, op='maximum')
-        self.layer1 = self._make_layer(block, 64, layers[0])
+        # self.conv1 = nn.Conv(3, self.inplanes, kernel_size=7, stride=2, padding=3, bias=False)
+        # jt.init.relu_invariant_gauss_(self.conv1.weight, mode="fan_out")
+        # self.bn1 = norm_layer(self.inplanes)
+        # self.relu = nn.Relu()
+        # self.maxpool = nn.Pool(kernel_size=3, stride=2, padding=1, op='maximum')
+        self.layer0 = Stem3x3(norm_layer)
+        #  do not downsample in C2
+        self.layer1 = self._make_layer(block, 64, layers[0],use_downsample=True)
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2, dilate=replace_stride_with_dilation[0])
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2, dilate=replace_stride_with_dilation[1])
         # self.layer4 = self._make_layer(block, 512, layers[3], stride=2, dilate=replace_stride_with_dilation[2])
         # self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         # self.fc = nn.Linear((512 * block.expansion), num_classes)
 
-    def _make_layer(self, block, planes, blocks, stride=1, dilate=False):
+    def _make_layer(self, block, planes, blocks, stride=1, dilate=False,use_downsample=True):
         norm_layer = self._norm_layer
         downsample = None
         previous_dilation = self.dilation
         if dilate:
             self.dilation *= stride
             stride = 1
-        if ((stride != 1) or (self.inplanes != (planes * block.expansion))):
+        if use_downsample and ((stride != 1) or (self.inplanes != (planes * block.expansion))):
             downsample = nn.Sequential(conv1x1(self.inplanes, (planes * block.expansion), stride), norm_layer((planes * block.expansion)))
         layers = []
         layers.append(block(self.inplanes, planes, stride, downsample, self.groups, self.base_width, previous_dilation, norm_layer))
@@ -124,12 +151,14 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def execute(self, x):
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-        x = self.maxpool(x)
-        C2 = self.layer1(x)
+        # x = self.conv1(x)
+        # x = self.bn1(x)
+        # x = self.relu(x)
+        # x = self.maxpool(x)
+        C1 = self.layer0(x)
+        C2 = self.layer1(C1)
         C3 = self.layer2(C2)
+        # return C3,None
         C4 = self.layer3(C3)
         # C5 = self.layer4(C4)
         return C3,C4
@@ -152,7 +181,14 @@ resnet34 = Resnet34
 
 def Resnet50(pretrained=False, **kwargs):
     model = _resnet(Bottleneck, [3, 4, 6, 3], **kwargs)
-    if pretrained: model.load("jittorhub://resnet50.pkl")
+    if pretrained:
+        params = jt.load("jittorhub://resnet50.pkl")
+        # del params["layer1.0.downsample.0.weight"]
+        # del params["layer1.0.downsample.1.weight"]
+        # del params["layer1.0.downsample.1.running_mean"]
+        # del params["layer1.0.downsample.1.running_var"]
+        # del params["layer1.0.downsample.1.bias"]
+        model.load_parameters(params)
     return model
 
 resnet50 = Resnet50

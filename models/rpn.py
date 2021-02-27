@@ -1,7 +1,6 @@
 import jittor as jt 
 from jittor import nn,init
 import numpy as np
-from utils.anchor_utils import make_anchors
 from utils.box_utils import bbox2loc,bbox2loc_r,bbox_iou,_unmap,loc2bbox,generate_anchor_base,_enumerate_shifted_anchor
 
 class ProposalTargetCreator(nn.Module):
@@ -337,12 +336,12 @@ class ProposalCreator(nn.Module):
         roi[:,3] = jt.clamp(roi[:,3],min_v=0,max_v=img_size[1])
 
         # Remove predicted boxes with either height or width < threshold.
-        min_size = self.min_size * scale
-        hs = roi[:, 2] - roi[:, 0]
-        ws = roi[:, 3] - roi[:, 1]
-        keep = jt.where((hs >= min_size) & (ws >= min_size))[0]
-        roi = roi[keep, :]
-        score = score[keep]
+        # min_size = self.min_size * scale
+        # hs = roi[:, 2] - roi[:, 0]
+        # ws = roi[:, 3] - roi[:, 1]
+        # keep = jt.where((hs >= min_size) & (ws >= min_size))[0]
+        # roi = roi[keep, :]
+        # score = score[keep]
 
         # Sort all (proposal, score) pairs by score from highest to lowest.
         # Take top pre_nms_topN (e.g. 6000).
@@ -419,7 +418,7 @@ class RegionProposalNetwork(nn.Module):
                                     rpn_fg_scores[i],
                                     anchor, 
                                     img_sizes[i],
-                                    1.0/self.feat_stride)
+                                    1.0)
             batch_index = i * jt.ones((len(roi),), dtype='int32')
             rois.append(roi)
             roi_indices.append(batch_index)

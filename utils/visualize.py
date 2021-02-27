@@ -123,7 +123,58 @@ def save_visualize_image(data_dir,img_id,pred_boxes,pred_scores,pred_labels,gt_b
     os.makedirs('test_imgs',exist_ok=True)
     cv2.imwrite(f'test_imgs/{img_id}.jpg',img)
 
+def visualize_rpn(img_id,pred_boxes,pred_scores,pred_labels,gt_boxes,gt_labels):
+    if isinstance(img_id,(tuple,list)):
+        img_id = img_id[0]
+    data_dir = "/mnt/disk/lxl/dataset/DOTA_CROP"
+    img_file = f"{data_dir}/train/images/{img_id}.png"
+    if not os.path.exists(img_file):
+        img_file = f"{data_dir}/train/images/{img_id}.png"
 
+    CLASSNAMES = ['plane', 'baseball-diamond', 'bridge', 'ground-track-field',
+              'small-vehicle', 'large-vehicle', 'ship','tennis-court', 'basketball-court',
+              'storage-tank', 'soccer-ball-field','roundabout', 'harbor',
+              'swimming-pool', 'helicopter', 'container-crane']
+    img = visualize_result(img_file,pred_boxes,pred_scores,pred_labels,gt_boxes,gt_labels,classnames)
+    
+
+
+def visualize_attention(img_id,pa_mask,gt_mask):
+    if isinstance(img_id,(tuple,list)):
+        img_id = img_id[0]
+    data_dir = "/mnt/disk/lxl/dataset/DOTA_CROP"
+    img_file = f"{data_dir}/train/images/{img_id}.png"
+    if not os.path.exists(img_file):
+        img_file = f"{data_dir}/val/images/{img_id}.png"
+    img = cv2.imread(img_file).astype(np.float32)
+    os.makedirs("tmp",exist_ok=True)
+    if hasattr(pa_mask,"numpy"):
+        pa_mask = pa_mask.numpy()
+    if gt_mask is not None and hasattr(gt_mask,"numpy"):
+        gt_mask = gt_mask.numpy()
+        gt_mask = gt_mask[0,0]*255
+
+    pa_mask = pa_mask[0,1]
+    pa_mask = 255*pa_mask
+    
+    
+    h,w = pa_mask.shape
+    img = cv2.resize(img,(w,h))
+    if gt_mask is not None:
+        result = np.zeros((h,w*3,3))
+        result[:,:w,:]=img
+        result[:,w:2*w,:]=pa_mask[:,:,None]
+        gt_mask = cv2.resize(gt_mask,(w,h))
+        result[:,2*w:,:]=gt_mask[:,:,None]
+    else:
+        result = np.zeros((h,w*2,3))
+        result[:,:w,:]=img
+        result[:,w:,:]=pa_mask[:,:,None]
+    img = result
+    img = img.astype(np.uint8)
+    cv2.imwrite(f"tmp/{img_id}.png",img)  
+    
+    
 def read_txt(txt_file):
     with open(txt_file) as f:
         data = [line.strip().split(" ") for line in f.readlines() if len(line.strip().split(" "))==10]

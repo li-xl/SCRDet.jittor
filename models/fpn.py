@@ -116,7 +116,6 @@ class MDANet(nn.Module):
 
         x = pa*x
         x = ca*x
-
         return x,pa_mask
 
 class SCRDetFPN(nn.Module):
